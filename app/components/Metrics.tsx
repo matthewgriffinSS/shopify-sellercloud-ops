@@ -11,33 +11,31 @@ function formatMoney(value: number): string {
 export async function Metrics() {
   const m = await fetchMetrics()
   return (
-    <div className="mgrid">
-      <div className="m">
-        <p className="m-lbl">Revenue at risk</p>
-        <p className="m-v">{formatMoney(m.revenueAtRisk)}</p>
-        <p className="m-d">Late orders + abandoned carts</p>
+    <div className="kpi-row">
+      <div className="kpi">
+        <div className="label">Revenue at risk</div>
+        <div className="value">{formatMoney(m.revenueAtRisk)}</div>
+        <div className="detail">Late + abandoned</div>
       </div>
-      <div className="m">
-        <p className="m-lbl">Awaiting action</p>
-        <p className="m-v">{m.awaitingAction}</p>
-        <p className="m-d">Across all queues</p>
+      <div className="kpi">
+        <div className="label">Awaiting action</div>
+        <div className="value">{m.awaitingAction}</div>
+        <div className="detail">Across all queues</div>
       </div>
-      <div className="m">
-        <p className="m-lbl">Processed today</p>
-        <p className="m-v">{m.processedToday}</p>
-        <p className="m-d">Via dashboard actions</p>
+      <div className="kpi">
+        <div className="label">Processed today</div>
+        <div className="value">{m.processedToday}</div>
+        <div className="detail">Via dashboard</div>
       </div>
-      <div className="m">
-        <p className="m-lbl">Avg time to resolve</p>
-        <p className="m-v">
-          {m.avgResolveHours ? `${m.avgResolveHours.toFixed(1)}h` : '—'}
-        </p>
-        <p className="m-d">Rolling 7 days</p>
+      <div className="kpi">
+        <div className="label">Avg resolve</div>
+        <div className="value">{m.avgResolveHours ? `${m.avgResolveHours.toFixed(1)}H` : '—'}</div>
+        <div className="detail">Rolling 7 days</div>
       </div>
-      <div className="m">
-        <p className="m-lbl">VIP revenue MTD</p>
-        <p className="m-v">{formatMoney(m.vipRevenueMtd)}</p>
-        <p className="m-d">{m.vipOrderCountMtd} orders</p>
+      <div className="kpi">
+        <div className="label">VIP MTD</div>
+        <div className="value">{formatMoney(m.vipRevenueMtd)}</div>
+        <div className="detail">{m.vipOrderCountMtd} orders</div>
       </div>
     </div>
   )

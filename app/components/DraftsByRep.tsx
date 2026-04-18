@@ -5,10 +5,8 @@ export async function DraftsByRep() {
   const rows = await fetchDraftsByRep()
 
   return (
-    <div className="sec">
-      <div className="sec-h">
-        <h3 className="sec-t">Draft order follow-ups by rep</h3>
-      </div>
+    <div className="card">
+      <h3>Draft order follow-ups by rep</h3>
       {rows.length === 0 ? (
         <div className="empty">No open drafts.</div>
       ) : (

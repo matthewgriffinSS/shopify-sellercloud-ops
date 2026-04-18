@@ -16,56 +16,71 @@ function Loading() {
 
 export default async function DashboardPage() {
   // Redirects to /login if DASHBOARD_PASSWORD is set and user isn't authed.
-  // No-op if DASHBOARD_PASSWORD is unset (useful for local dev).
   await requireDashboardAuth()
 
+  const today = new Date().toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+
   return (
-    <main className="container">
-      <header className="hdr">
-        <div>
-          <h1 className="ttl">Operations dashboard</h1>
-          <p className="sub">Shopify + Sellercloud · orders requiring action</p>
+    <>
+      <div className="header">
+        <div className="brand">
+          <span className="logo">OPS</span>
+          <div className="divider"></div>
+          <div>
+            <div className="title">Ops Dashboard</div>
+            <div className="meta">Shopify + Sellercloud · {today}</div>
+          </div>
         </div>
-        <div className="status-row">
-          <span>
-            <span className="dot"></span>Shopify
-          </span>
-          <span>
-            <span className="dot"></span>Sellercloud
-          </span>
-          <a href="/health" style={{ fontSize: 12 }}>
-            Health →
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div className="status">
+            <span>
+              <span className="dot"></span>Shopify
+            </span>
+            <span>
+              <span className="dot"></span>Sellercloud
+            </span>
+          </div>
+          <a href="/health" className="icon-btn">
+            Health
           </a>
         </div>
-      </header>
-
-      <Suspense fallback={<Loading />}>
-        <Metrics />
-      </Suspense>
-
-      <div className="role-hdr">
-        <div className="role-ic sup">S</div>
-        <h2 className="role-ttl">Support team</h2>
-        <span className="role-sub">Late fulfillments · VIP orders</span>
       </div>
-      <Suspense fallback={<Loading />}>
-        <LateFulfillments />
-      </Suspense>
-      <Suspense fallback={<Loading />}>
-        <VipOrders />
-      </Suspense>
 
-      <div className="role-hdr">
-        <div className="role-ic sal">S</div>
-        <h2 className="role-ttl">Sales team</h2>
-        <span className="role-sub">Draft orders · abandoned carts</span>
-      </div>
-      <Suspense fallback={<Loading />}>
-        <DraftsByRep />
-      </Suspense>
-      <Suspense fallback={<Loading />}>
-        <AbandonedCarts />
-      </Suspense>
-    </main>
+      <main className="container">
+        <Suspense fallback={<Loading />}>
+          <Metrics />
+        </Suspense>
+
+        <div className="role-hdr">
+          <div className="role-ic sup">S</div>
+          <div className="role-ttl">Support team</div>
+          <span className="role-sub">Late fulfillments · VIP orders</span>
+        </div>
+        <Suspense fallback={<Loading />}>
+          <LateFulfillments />
+        </Suspense>
+        <Suspense fallback={<Loading />}>
+          <VipOrders />
+        </Suspense>
+
+        <div className="role-hdr">
+          <div className="role-ic sal">S</div>
+          <div className="role-ttl">Sales team</div>
+          <span className="role-sub">Draft orders · abandoned carts</span>
+        </div>
+        <Suspense fallback={<Loading />}>
+          <DraftsByRep />
+        </Suspense>
+        <Suspense fallback={<Loading />}>
+          <AbandonedCarts />
+        </Suspense>
+
+        <div className="footer">OPS DASHBOARD · {today}</div>
+      </main>
+    </>
   )
 }

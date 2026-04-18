@@ -10,14 +10,12 @@ export async function VipOrders() {
   )
 
   return (
-    <div className="sec">
-      <div className="sec-h">
-        <h3 className="sec-t">VIP orders — this week</h3>
-      </div>
+    <div className="card">
+      <h3>VIP orders — this week</h3>
       {rows.length === 0 ? (
         <div className="empty">No VIP orders this week.</div>
       ) : (
-        <table className="tbl">
+        <table>
           <thead>
             <tr>
               <th style={{ width: '10%' }}>Order</th>

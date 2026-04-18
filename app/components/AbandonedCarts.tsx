@@ -6,10 +6,8 @@ export async function AbandonedCarts() {
   const rows = await fetchAbandonedCarts()
 
   return (
-    <div className="sec">
-      <div className="sec-h">
-        <h3 className="sec-t">High-value abandoned carts ($2000+)</h3>
-      </div>
+    <div className="card">
+      <h3>High-value abandoned carts ($2000+)</h3>
       {rows.length === 0 ? (
         <div className="empty">No high-value abandoned carts in the last 7 days.</div>
       ) : (

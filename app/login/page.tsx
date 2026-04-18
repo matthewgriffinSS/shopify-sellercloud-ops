@@ -41,22 +41,47 @@ export default function LoginPage() {
         alignItems: 'center',
         justifyContent: 'center',
         padding: '0 20px',
+        background: 'var(--bg)',
       }}
     >
       <form
         onSubmit={submit}
         style={{
-          background: 'var(--surface)',
-          border: '0.5px solid var(--border)',
-          borderRadius: 'var(--radius-lg)',
-          padding: '28px 32px',
+          background: 'var(--bg2)',
+          border: '1px solid var(--border)',
+          borderTop: '4px solid var(--accent)',
+          borderRadius: '12px',
+          padding: '32px 36px',
           width: '100%',
-          maxWidth: 360,
+          maxWidth: 380,
+          boxShadow: '0 20px 60px rgba(0, 0, 0, 0.6)',
         }}
       >
-        <h1 style={{ fontSize: 20, fontWeight: 500, margin: '0 0 4px' }}>Operations dashboard</h1>
-        <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 20px' }}>
-          Enter the dashboard password to continue.
+        <h1
+          style={{
+            fontFamily: 'var(--font-industrial)',
+            fontSize: 28,
+            fontWeight: 400,
+            margin: '0 0 4px',
+            color: '#fff',
+            letterSpacing: '4px',
+            textTransform: 'uppercase',
+            lineHeight: 1,
+          }}
+        >
+          Ops Dashboard
+        </h1>
+        <p
+          style={{
+            fontSize: 11,
+            color: 'var(--text2)',
+            margin: '0 0 24px',
+            textTransform: 'uppercase',
+            letterSpacing: '1px',
+            fontWeight: 500,
+          }}
+        >
+          Enter password to continue
         </p>
         <input
           type="password"
@@ -66,24 +91,29 @@ export default function LoginPage() {
           placeholder="Password"
           style={{
             width: '100%',
-            padding: '10px 12px',
+            padding: '11px 14px',
             fontSize: 14,
-            border: '0.5px solid var(--border-2)',
-            borderRadius: 'var(--radius-md)',
-            background: 'var(--surface)',
+            border: '1px solid var(--border)',
+            borderRadius: '6px',
+            background: 'var(--bg3)',
             color: 'var(--text)',
             marginBottom: 12,
+            fontFamily: 'var(--font-body)',
           }}
         />
         {error && (
           <div
             style={{
-              fontSize: 13,
-              color: 'var(--danger-text)',
+              fontSize: 10,
+              color: 'var(--red)',
               marginBottom: 12,
-              padding: '8px 12px',
-              background: 'var(--danger-bg)',
-              borderRadius: 'var(--radius-md)',
+              padding: '9px 12px',
+              background: 'rgba(255, 69, 58, 0.12)',
+              border: '1px solid rgba(255, 69, 58, 0.3)',
+              borderRadius: '6px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+              fontWeight: 600,
             }}
           >
             {error}
@@ -93,9 +123,9 @@ export default function LoginPage() {
           type="submit"
           disabled={submitting || !password}
           className="btn btn-primary"
-          style={{ width: '100%' }}
+          style={{ width: '100%', padding: '11px 16px', fontSize: 12 }}
         >
-          {submitting ? 'Checking…' : 'Sign in'}
+          {submitting ? 'Checking…' : 'Sign In'}
         </button>
       </form>
     </main>

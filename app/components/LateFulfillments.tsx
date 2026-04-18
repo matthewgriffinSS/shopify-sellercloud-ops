@@ -10,14 +10,12 @@ export async function LateFulfillments() {
   )
 
   return (
-    <div className="sec">
-      <div className="sec-h">
-        <h3 className="sec-t">Late fulfillments</h3>
-      </div>
+    <div className="card">
+      <h3>Late fulfillments</h3>
       {rows.length === 0 ? (
         <div className="empty">No late fulfillments. Nice.</div>
       ) : (
-        <table className="tbl">
+        <table>
           <thead>
             <tr>
               <th style={{ width: '10%' }}>Order</th>
