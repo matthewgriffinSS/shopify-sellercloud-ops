@@ -53,15 +53,15 @@ export async function POST(req: NextRequest) {
       if (!scOrder) {
         scError = `No Sellercloud order found for Shopify ID ${input.resourceId}`
       } else if (input.actionType === 'mark_fulfilled' && input.tracking) {
-        const shipment = await createShipment(scOrder.ID, {
+        await createShipment(scOrder.ID, {
           carrier: input.tracking.carrier,
           tracking: input.tracking.number,
           note: input.note,
         })
-        scNoteId = shipment.ID
+        scNoteId = `shipment-${scOrder.ID}`
       } else if (input.note) {
-        const note = await addOrderNote(scOrder.ID, input.note, input.actor)
-        scNoteId = note.ID
+        await addOrderNote(scOrder.ID, input.note)
+        scNoteId = `note-${scOrder.ID}`
       }
     }
   } catch (err) {

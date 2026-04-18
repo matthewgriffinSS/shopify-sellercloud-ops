@@ -1,4 +1,5 @@
 import { Suspense } from 'react'
+import { requireDashboardAuth } from '@/lib/auth'
 import { Metrics } from './components/Metrics'
 import { LateFulfillments } from './components/LateFulfillments'
 import { VipOrders } from './components/VipOrders'
@@ -13,7 +14,11 @@ function Loading() {
   return <div className="empty">Loading…</div>
 }
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  // Redirects to /login if DASHBOARD_PASSWORD is set and user isn't authed.
+  // No-op if DASHBOARD_PASSWORD is unset (useful for local dev).
+  await requireDashboardAuth()
+
   return (
     <main className="container">
       <header className="hdr">
@@ -28,6 +33,9 @@ export default function DashboardPage() {
           <span>
             <span className="dot"></span>Sellercloud
           </span>
+          <a href="/health" style={{ fontSize: 12 }}>
+            Health →
+          </a>
         </div>
       </header>
 

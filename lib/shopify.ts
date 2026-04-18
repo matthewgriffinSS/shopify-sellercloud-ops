@@ -10,6 +10,7 @@ export function verifyShopifyWebhook(
   secret: string,
 ): boolean {
   if (!signature) return false
+  if (!secret) return false
 
   const expected = crypto.createHmac('sha256', secret).update(rawBody, 'utf8').digest('base64')
 
@@ -19,26 +20,78 @@ export function verifyShopifyWebhook(
   return crypto.timingSafeEqual(a, b)
 }
 
-const STORE = process.env.SHOPIFY_STORE_DOMAIN
-const TOKEN = process.env.SHOPIFY_ADMIN_API_TOKEN
+// ---------- Shopify token management via client_credentials grant ----------
+
+// Module-level cache persists across warm serverless invocations.
+// Tokens from client_credentials are typically valid ~1 hour.
+let cachedToken: string | null = null
+let cachedAt = 0
+let inflight: Promise<string> | null = null
+const TOKEN_TTL_MS = 50 * 60 * 1000 // 50 min, with safety margin
+
+/**
+ * Mint (or reuse) a Shopify Admin API token via the client_credentials grant.
+ * This is the "app-only" auth flow used by custom distribution apps —
+ * no user interaction, no install redirect. Client ID + secret → token.
+ */
+async function getAccessToken(): Promise<string> {
+  const { SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET, SHOPIFY_STORE_DOMAIN } = process.env
+  if (!SHOPIFY_CLIENT_ID || !SHOPIFY_CLIENT_SECRET || !SHOPIFY_STORE_DOMAIN) {
+    throw new Error('Missing SHOPIFY_CLIENT_ID / SHOPIFY_CLIENT_SECRET / SHOPIFY_STORE_DOMAIN')
+  }
+
+  const now = Date.now()
+  if (cachedToken && now - cachedAt < TOKEN_TTL_MS) {
+    return cachedToken
+  }
+
+  // Dedupe concurrent cold fetches
+  if (inflight) return inflight
+
+  inflight = (async () => {
+    try {
+      const res = await fetch(`https://${SHOPIFY_STORE_DOMAIN}/admin/oauth/access_token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `grant_type=client_credentials&client_id=${encodeURIComponent(
+          SHOPIFY_CLIENT_ID,
+        )}&client_secret=${encodeURIComponent(SHOPIFY_CLIENT_SECRET)}`,
+      })
+      if (!res.ok) {
+        throw new Error(`Shopify token exchange failed: ${res.status} ${await res.text()}`)
+      }
+      const data = (await res.json()) as { access_token?: string }
+      if (!data.access_token) throw new Error('Shopify did not return an access_token')
+      cachedToken = data.access_token
+      cachedAt = Date.now()
+      return cachedToken
+    } finally {
+      inflight = null
+    }
+  })()
+
+  return inflight
+}
+
 const API_VERSION = '2025-01'
 
 /**
  * Minimal Shopify Admin API client. Throws on non-2xx responses.
+ * Gets a fresh token automatically if needed.
  */
 export async function shopifyRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  if (!STORE || !TOKEN) {
-    throw new Error('SHOPIFY_STORE_DOMAIN or SHOPIFY_ADMIN_API_TOKEN is not set')
-  }
-
-  const res = await fetch(`https://${STORE}/admin/api/${API_VERSION}${path}`, {
-    ...init,
-    headers: {
-      'X-Shopify-Access-Token': TOKEN,
-      'Content-Type': 'application/json',
-      ...init?.headers,
+  const token = await getAccessToken()
+  const res = await fetch(
+    `https://${process.env.SHOPIFY_STORE_DOMAIN}/admin/api/${API_VERSION}${path}`,
+    {
+      ...init,
+      headers: {
+        'X-Shopify-Access-Token': token,
+        'Content-Type': 'application/json',
+        ...init?.headers,
+      },
     },
-  })
+  )
 
   if (!res.ok) {
     const body = await res.text()
