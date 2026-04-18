@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
   if (input.resourceType === 'abandoned_checkout' && input.actionType === 'contacted') {
     await sql`
       UPDATE abandoned_checkouts SET contacted_at = NOW()
-      WHERE id = ${BigInt(input.resourceId)}
+      WHERE id = ${input.resourceId}::bigint
     `
   }
 
