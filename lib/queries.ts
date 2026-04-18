@@ -93,13 +93,13 @@ export async function fetchDraftsByRep() {
     { assigned_rep: string; count: string; total_value: string; stale_count: string }[]
   >`
     SELECT
-      assigned_rep,
+      COALESCE(assigned_rep, 'unassigned') AS assigned_rep,
       COUNT(*)::text AS count,
       COALESCE(SUM(total_price), 0)::text AS total_value,
       COUNT(*) FILTER (WHERE shopify_created_at < NOW() - INTERVAL '7 days')::text AS stale_count
     FROM shopify_draft_orders
-    WHERE status = 'open' AND assigned_rep IS NOT NULL
-    GROUP BY assigned_rep
+    WHERE status = 'open'
+    GROUP BY COALESCE(assigned_rep, 'unassigned')
     ORDER BY SUM(total_price) DESC
   `
 }

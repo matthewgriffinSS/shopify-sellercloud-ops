@@ -54,6 +54,65 @@ export default function HealthPage() {
     }
   }, [])
 
+  // --- Webhook registration state ---
+  const [webhookStatus, setWebhookStatus] = useState<any>(null)
+  const [webhookLoading, setWebhookLoading] = useState(false)
+  const [webhookError, setWebhookError] = useState<string | null>(null)
+
+  const checkWebhooks = useCallback(async () => {
+    setWebhookLoading(true)
+    setWebhookError(null)
+    try {
+      const res = await fetch('/api/admin/webhooks', { cache: 'no-store' })
+      const data = await res.json()
+      if (!data.ok) setWebhookError(data.error || 'Failed')
+      else setWebhookStatus(data)
+    } catch (err) {
+      setWebhookError(err instanceof Error ? err.message : 'Failed')
+    } finally {
+      setWebhookLoading(false)
+    }
+  }, [])
+
+  const registerWebhooks = useCallback(async () => {
+    setWebhookLoading(true)
+    setWebhookError(null)
+    try {
+      const res = await fetch('/api/admin/webhooks', { method: 'POST', cache: 'no-store' })
+      const data = await res.json()
+      if (!data.ok) setWebhookError(data.error || 'Failed')
+      await checkWebhooks() // refresh status
+    } catch (err) {
+      setWebhookError(err instanceof Error ? err.message : 'Failed')
+    } finally {
+      setWebhookLoading(false)
+    }
+  }, [checkWebhooks])
+
+  // --- Backfill drafts state ---
+  const [backfillRunning, setBackfillRunning] = useState(false)
+  const [backfillResult, setBackfillResult] = useState<any>(null)
+  const [backfillError, setBackfillError] = useState<string | null>(null)
+
+  const backfillDrafts = useCallback(async () => {
+    setBackfillRunning(true)
+    setBackfillResult(null)
+    setBackfillError(null)
+    try {
+      const res = await fetch('/api/admin/backfill-drafts', {
+        method: 'POST',
+        cache: 'no-store',
+      })
+      const data = await res.json()
+      if (!data.ok) setBackfillError(data.error || 'Failed')
+      else setBackfillResult(data)
+    } catch (err) {
+      setBackfillError(err instanceof Error ? err.message : 'Failed')
+    } finally {
+      setBackfillRunning(false)
+    }
+  }, [])
+
   const check = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -295,6 +354,129 @@ export default function HealthPage() {
               }}
             >
               {jobError}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* ---------- Webhook registration ---------- */}
+      <section style={{ marginTop: 32 }}>
+        <h2 style={{ fontSize: 16, fontWeight: 500, margin: '0 0 10px' }}>Shopify webhooks</h2>
+        <div className="card" style={{ marginBottom: 0 }}>
+          <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 12px' }}>
+            Webhooks must be registered before Shopify will send draft order and abandoned cart
+            events. Check which are currently registered, and click Register to auto-create any
+            that are missing.
+          </p>
+          <div style={{ display: 'flex', gap: 8, marginBottom: backfillResult ? 10 : 0 }}>
+            <button
+              className="btn-sm"
+              onClick={checkWebhooks}
+              disabled={webhookLoading}
+            >
+              {webhookLoading ? 'Checking…' : 'Check status'}
+            </button>
+            <button
+              className="btn-sm btn-primary"
+              onClick={registerWebhooks}
+              disabled={webhookLoading}
+            >
+              {webhookLoading ? 'Working…' : 'Register missing webhooks'}
+            </button>
+          </div>
+          {webhookError && (
+            <div
+              style={{
+                fontSize: 12,
+                padding: '8px 10px',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--danger-bg)',
+                color: 'var(--danger-text)',
+                fontFamily: 'var(--font-mono)',
+                marginTop: 10,
+                wordBreak: 'break-word',
+              }}
+            >
+              {webhookError}
+            </div>
+          )}
+          {webhookStatus && (
+            <div style={{ marginTop: 12 }}>
+              <table style={{ width: '100%', fontSize: 11 }}>
+                <thead>
+                  <tr>
+                    <th>Topic</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {webhookStatus.required.map((w: any) => (
+                    <tr key={w.topic}>
+                      <td style={{ fontFamily: 'var(--font-mono)' }}>{w.topic}</td>
+                      <td>
+                        {w.registered ? (
+                          <span className="bdg b-s">Registered</span>
+                        ) : w.wrongAddress ? (
+                          <span className="bdg b-w">Wrong URL</span>
+                        ) : (
+                          <span className="bdg b-d">Missing</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* ---------- Draft backfill ---------- */}
+      <section style={{ marginTop: 32 }}>
+        <h2 style={{ fontSize: 16, fontWeight: 500, margin: '0 0 10px' }}>Backfill data</h2>
+        <div className="card" style={{ marginBottom: 0 }}>
+          <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 12px' }}>
+            Webhooks only fire for new events. Use this to pull all currently-open drafts from
+            Shopify so they show on the dashboard immediately without waiting for the next update.
+          </p>
+          <button
+            className="btn-sm"
+            onClick={backfillDrafts}
+            disabled={backfillRunning}
+          >
+            {backfillRunning ? 'Running…' : 'Backfill open drafts from Shopify'}
+          </button>
+          {backfillResult && (
+            <div
+              style={{
+                fontSize: 12,
+                padding: '8px 10px',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--success-bg)',
+                color: 'var(--success-text)',
+                fontFamily: 'var(--font-mono)',
+                marginTop: 10,
+              }}
+            >
+              Fetched {backfillResult.fetched}, upserted {backfillResult.upserted}.
+              {backfillResult.unassignedAfterBackfill > 0 &&
+                ` ${backfillResult.unassignedAfterBackfill} unassigned (rep tag missing).`}
+            </div>
+          )}
+          {backfillError && (
+            <div
+              style={{
+                fontSize: 12,
+                padding: '8px 10px',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--danger-bg)',
+                color: 'var(--danger-text)',
+                fontFamily: 'var(--font-mono)',
+                marginTop: 10,
+                wordBreak: 'break-word',
+              }}
+            >
+              {backfillError}
             </div>
           )}
         </div>
