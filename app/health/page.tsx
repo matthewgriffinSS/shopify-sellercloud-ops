@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 type Check = { name: string; ok: boolean; latencyMs: number | null; detail: string }
 type HealthResponse = { ok: boolean; checkedAt: string; checks: Check[] }
+type JobResult = { ok: boolean; checked: number; upserted: number; triggeredBy: string } | null
 
 const SERVICES: Record<
   string,
@@ -31,6 +32,27 @@ export default function HealthPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [lastCheckedAt, setLastCheckedAt] = useState<Date | null>(null)
+  const [jobRunning, setJobRunning] = useState(false)
+  const [jobResult, setJobResult] = useState<JobResult>(null)
+  const [jobError, setJobError] = useState<string | null>(null)
+
+  const runLateFulfillmentJob = useCallback(async () => {
+    setJobRunning(true)
+    setJobResult(null)
+    setJobError(null)
+    try {
+      const res = await fetch('/api/cron/check-late-fulfillments', { cache: 'no-store' })
+      if (!res.ok) {
+        setJobError(`Failed: ${res.status} ${await res.text()}`)
+        return
+      }
+      setJobResult(await res.json())
+    } catch (err) {
+      setJobError(err instanceof Error ? err.message : 'Failed to run')
+    } finally {
+      setJobRunning(false)
+    }
+  }, [])
 
   const check = useCallback(async () => {
     setLoading(true)
@@ -208,6 +230,75 @@ export default function HealthPage() {
           Last checked {lastCheckedAt.toLocaleTimeString()}
         </p>
       )}
+
+      <section style={{ marginTop: 40 }}>
+        <h2 style={{ fontSize: 16, fontWeight: 500, margin: '0 0 10px' }}>Scheduled jobs</h2>
+        <div
+          style={{
+            background: 'var(--surface)',
+            border: '0.5px solid var(--border)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '14px 16px',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'baseline',
+              gap: 12,
+              marginBottom: 6,
+            }}
+          >
+            <h3 style={{ fontSize: 14, fontWeight: 500, margin: 0 }}>
+              Late fulfillment scan
+            </h3>
+            <span className="bdg b-n">Daily at 07:00 UTC</span>
+          </div>
+          <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 12px' }}>
+            Scans Shopify for orders unfulfilled ≥ 3 days and adds them to the dashboard's Late
+            Fulfillments section. Runs automatically once per day; trigger manually here if you
+            need a fresher view.
+          </p>
+          <button
+            className="btn-sm"
+            onClick={runLateFulfillmentJob}
+            disabled={jobRunning}
+            style={{ marginBottom: jobResult || jobError ? 10 : 0 }}
+          >
+            {jobRunning ? 'Running…' : 'Run now'}
+          </button>
+          {jobResult && (
+            <div
+              style={{
+                fontSize: 12,
+                padding: '8px 10px',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--success-bg)',
+                color: 'var(--success-text)',
+                fontFamily: 'var(--font-mono)',
+              }}
+            >
+              Scanned {jobResult.checked} orders, updated {jobResult.upserted} in the dashboard.
+            </div>
+          )}
+          {jobError && (
+            <div
+              style={{
+                fontSize: 12,
+                padding: '8px 10px',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--danger-bg)',
+                color: 'var(--danger-text)',
+                fontFamily: 'var(--font-mono)',
+                wordBreak: 'break-word',
+              }}
+            >
+              {jobError}
+            </div>
+          )}
+        </div>
+      </section>
     </main>
   )
 }

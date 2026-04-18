@@ -2,22 +2,39 @@ import { NextRequest } from 'next/server'
 import { sql } from '@/lib/db'
 import { fetchStaleUnfulfilledOrders } from '@/lib/shopify'
 import { parseTags, isVipOrder } from '@/lib/tags'
+import { verifyCookieValue } from '@/lib/auth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 /**
- * Runs every 6 hours via vercel.json cron.
- * Finds Shopify orders that have been unfulfilled for >= 3 days
- * and upserts them into our local mirror so they appear on the dashboard.
+ * Late-fulfillment scan.
+ *
+ * Called two ways:
+ *   1. Automatically by Vercel Cron once a day at 07:00 UTC (vercel.json)
+ *      — Vercel sends Authorization: Bearer $CRON_SECRET
+ *   2. Manually by a logged-in user via the "Run now" button on /health
+ *      — forwards the user's dashboard auth cookie
+ *
+ * Finds Shopify orders unfulfilled >= 3 days and upserts them into the
+ * local mirror so they appear on the dashboard's Late Fulfillments section.
  *
  * Replaces: the "Late fulfillment" Shopify Flow's 3-day wait + condition + tag steps.
+ *
+ * Note: Hobby plan limits crons to once per day. If you need faster refresh,
+ * upgrade to Pro (unlimited) or trigger manually from /health.
  */
 export async function GET(req: NextRequest) {
-  // Verify it's actually Vercel cron calling us (Vercel sends this header).
   const auth = req.headers.get('authorization')
-  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
-    return new Response('Unauthorized', { status: 401 })
+  const isCron = auth === `Bearer ${process.env.CRON_SECRET}`
+
+  if (!isCron) {
+    // Allow logged-in dashboard users to trigger manually.
+    const cookieValue = req.cookies.get('dashboard_auth')?.value
+    const isUser = process.env.DASHBOARD_PASSWORD && verifyCookieValue(cookieValue)
+    if (!isUser) {
+      return new Response('Unauthorized', { status: 401 })
+    }
   }
 
   const { orders } = await fetchStaleUnfulfilledOrders(3)
@@ -49,5 +66,5 @@ export async function GET(req: NextRequest) {
     upserted += 1
   }
 
-  return Response.json({ ok: true, checked: orders.length, upserted })
+  return Response.json({ ok: true, checked: orders.length, upserted, triggeredBy: isCron ? 'cron' : 'user' })
 }
