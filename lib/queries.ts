@@ -102,6 +102,8 @@ export async function fetchDraftsByRep() {
       AND shopify_created_at > NOW() - INTERVAL '60 days'
       AND service_type IS NULL
       AND can_delete = FALSE
+      AND converted_order_id IS NULL
+      AND converted_at IS NULL
     GROUP BY COALESCE(assigned_rep, 'unassigned')
     ORDER BY SUM(total_price) DESC
   `
@@ -133,8 +135,12 @@ export type DraftFollowupRow = {
 }
 
 /**
- * Full detail for a rep's drafts page. Excludes service-tagged drafts
- * (they're handled separately) and rows flagged can_delete.
+ * Full detail for a rep's drafts page. Excludes:
+ *  - service-tagged drafts (sdss/install/rebuild/shock service)
+ *  - rows closed out by the rep (can_delete = true)
+ *  - drafts that have converted to a real order (converted_order_id set,
+ *    either by Shopify itself or by a rep marking it closed)
+ *
  * Pass 'unassigned' to get drafts with no assigned_rep.
  */
 export async function fetchDraftsForRep(rep: string): Promise<DraftFollowupRow[]> {
@@ -168,6 +174,8 @@ export async function fetchDraftsForRep(rep: string): Promise<DraftFollowupRow[]
       AND shopify_created_at > NOW() - INTERVAL '60 days'
       AND service_type IS NULL
       AND can_delete = FALSE
+      AND converted_order_id IS NULL
+      AND converted_at IS NULL
       AND (
         (${repFilter}::text IS NULL AND assigned_rep IS NULL)
         OR assigned_rep = ${repFilter}

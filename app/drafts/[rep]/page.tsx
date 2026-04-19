@@ -60,9 +60,9 @@ export default async function RepDraftsPage({
         </div>
 
         <div className="footer">
-          Showing invoice-sent drafts from the last 60 days. Drafts still in "open" status
-          (invoice not yet sent) and drafts with service tags (sdss / install / rebuild /
-          shock service) are excluded from this view.
+          Showing invoice-sent drafts from the last 60 days, excluding drafts that have
+          converted to orders, been closed out, or have service tags (sdss / install /
+          rebuild / shock service).
         </div>
       </main>
     </>

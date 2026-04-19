@@ -926,3 +926,49 @@ tr.grand-total td {
   letter-spacing: 1px;
   font-weight: 500;
 }
+
+/* ===== Draft follow-up tabs ===== */
+.dfu-tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.dfu-tab {
+  background: transparent;
+  border: none;
+  color: var(--text2);
+  padding: 10px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: -1px;
+}
+.dfu-tab:hover {
+  color: var(--text);
+}
+.dfu-tab-on {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.dfu-tab-ct {
+  background: var(--bg3);
+  color: var(--text2);
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 18px;
+  text-align: center;
+}
+.dfu-tab-on .dfu-tab-ct {
+  background: var(--accent);
+  color: #fff;
+}

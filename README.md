@@ -149,19 +149,29 @@ Both team pages share the top-line Metrics strip and each has a one-click link t
 
 ## Draft follow-up pages (replaces the Google Sheet)
 
-The old "Draft Order Follow Up" sheet had one tab per rep with columns for email/SMS/phone follow-up checkboxes, dates, richpanel links, notes, and a "Can Delete" flag. That lives here now.
+The old "Draft Order Follow Up" sheet had one tab per rep with columns for email/SMS/phone follow-up checkboxes, dates, richpanel links, notes, and a "Can Delete" flag. That lives here now — streamlined to the columns that actually get used day-to-day.
 
 **Per-rep pages.** From `/sales`, click a rep's tile under "Draft order follow-ups by rep" to land on `/drafts/<rep>`. Each row is a draft order assigned to that rep, with inline-editable checkboxes and text fields that save as you edit.
 
-**Filter applied automatically:**
-- Status must be `invoice_sent` (Shopify's state once the invoice email has actually gone out). Drafts still sitting in `open` status — rep built the cart but never sent the invoice — are excluded because there's nothing yet for the customer to respond to.
-- Created within the last 60 days. Older drafts are considered stale / not worth chasing.
-- Service tags (`sdss` / `install` / `rebuild` / `shock service`) are excluded — just like the old Shopify Flow skipped them.
-- Rows flagged `can_delete` are hidden.
+**Tabs on each rep page:**
+- **All** — every draft visible for this rep
+- **Stale** — 7+ days old with no follow-up logged yet (the ones actually worth chasing)
+- **Needs first touch** — no email, SMS, or call logged
 
-**Date auto-stamping.** Checking **SMS** or **Phone** auto-stamps the timestamp in the adjacent date column. Unchecking clears it. Same pattern for **Conv** (converted) — stamps `converted_at` when a rep manually closes a deal off-Shopify. When Shopify itself tells us the draft was converted into a real order (via `order_id`), the webhook auto-stamps `converted_at` too.
+Each tab shows a count badge so reps can see at a glance which pile to work first.
 
-**"Can delete" hides the row.** Checking Del flags the row as resolved and removes it from the view. The underlying record stays — this is a soft filter, not a destructive action.
+**Columns:** Invoice # · Phone · Date Created · Tags · Email · SMS · SMS Date · Phone · Phone Date · Richpanel · Notes · Close Out · Draft ID. Customer email was intentionally dropped — reps can click the invoice # to reach Shopify for full customer info.
+
+**Auto-hidden rows:**
+- Status must be `invoice_sent`. Drafts still in `open` status (invoice not yet sent) are excluded.
+- Created within the last 60 days. Older drafts drop off automatically.
+- Service tags (`sdss` / `install` / `rebuild` / `shock service`) excluded.
+- Converted drafts (those Shopify has linked to a real order via `order_id`) disappear the instant the webhook fires. No rep action needed for normal Shopify checkouts.
+- Rows closed out by the rep (Close Out checkbox) are hidden.
+
+**Date auto-stamping.** Checking **SMS** or **Phone** auto-stamps the timestamp in the adjacent date column. Unchecking clears it.
+
+**"Close Out" for off-Shopify sales.** Checking Close Out hides the row. Use it for phone/check sales where the customer paid outside Shopify (so the draft never converts automatically), or drafts that won't convert at all. The underlying record stays — this is a soft filter, not destructive.
 
 **Rep-owned fields are protected from webhook updates.** When Shopify sends a `draft_orders/update`, we refresh the customer/tags/status/totals but deliberately do NOT overwrite any of the follow-up columns a rep has edited. See the `ON CONFLICT` clause in `app/api/webhooks/shopify/draft-orders-create/route.ts`.
 
