@@ -61,8 +61,6 @@ export async function POST(req: NextRequest) {
 }
 
 async function updateField(id: string, field: Field, value: boolean | string | null) {
-  const idBigint = `${id}::bigint`
-
   // Text fields — trim and store, null out if empty.
   if (field === 'richpanel_link' || field === 'rep_notes') {
     const text = typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
@@ -75,7 +73,7 @@ async function updateField(id: string, field: Field, value: boolean | string | n
   }
 
   // Boolean fields — coerce from whatever the client sent.
-  const bool = value === true || value === 'true' || value === 1
+  const bool = value === true || value === 'true'
 
   // Date-stamping checkboxes: stamp NOW() when going true, clear when going false.
   if (field === 'sms_followup') {
@@ -125,7 +123,6 @@ async function updateField(id: string, field: Field, value: boolean | string | n
     return
   }
 
-  // Exhaustiveness: should never hit.
-  void idBigint
-  throw new Error(`Unknown field: ${field}`)
+  // Exhaustiveness: should never hit given the Field union.
+  throw new Error(`Unknown field: ${String(field)}`)
 }
