@@ -12,11 +12,16 @@ type DraftOrder = {
   id: number
   name: string
   email: string | null
+  phone: string | null
   total_price: string
   status: string
   tags: string
   created_at: string
-  customer: { first_name: string | null; last_name: string | null } | null
+  customer: {
+    first_name: string | null
+    last_name: string | null
+    phone: string | null
+  } | null
   order_id: number | null
 }
 
@@ -25,6 +30,9 @@ type DraftOrder = {
  * Pulls all open draft orders from Shopify and inserts them into our mirror,
  * bypassing webhooks. Run once after setting up to populate existing drafts,
  * or whenever you suspect the webhook dropped events.
+ *
+ * Same conflict rules as the webhook handler: never overwrite rep-owned
+ * follow-up state.
  */
 export async function POST(req: NextRequest) {
   const cookieValue = req.cookies.get('dashboard_auth')?.value
@@ -43,23 +51,36 @@ export async function POST(req: NextRequest) {
       const tags = parseTags(draft.tags)
       const customerName =
         [draft.customer?.first_name, draft.customer?.last_name].filter(Boolean).join(' ') || null
+      const customerPhone = draft.customer?.phone ?? draft.phone ?? null
 
       await sql`
         INSERT INTO shopify_draft_orders (
-          id, name, customer_name, customer_email, total_price, status,
-          tags, assigned_rep, converted_order_id, raw_payload, shopify_created_at
+          id, name, customer_name, customer_email, customer_phone,
+          total_price, status, tags, assigned_rep, service_type,
+          converted_order_id, raw_payload, shopify_created_at
         ) VALUES (
-          ${draft.id}, ${draft.name}, ${customerName}, ${draft.email},
+          ${draft.id}, ${draft.name}, ${customerName}, ${draft.email}, ${customerPhone},
           ${parseFloat(draft.total_price)}, ${draft.status},
-          ${tags.raw}, ${tags.rep}, ${draft.order_id},
-          ${sql.json(draft)}, ${draft.created_at}
+          ${tags.raw}, ${tags.rep}, ${tags.service},
+          ${draft.order_id}, ${sql.json(draft)}, ${draft.created_at}
         )
         ON CONFLICT (id) DO UPDATE SET
           status = EXCLUDED.status,
           tags = EXCLUDED.tags,
           assigned_rep = EXCLUDED.assigned_rep,
+          service_type = EXCLUDED.service_type,
+          customer_name = EXCLUDED.customer_name,
+          customer_email = EXCLUDED.customer_email,
+          customer_phone = EXCLUDED.customer_phone,
+          converted_order_id = EXCLUDED.converted_order_id,
           total_price = EXCLUDED.total_price,
           raw_payload = EXCLUDED.raw_payload,
+          converted_at = CASE
+            WHEN shopify_draft_orders.converted_at IS NULL
+                 AND EXCLUDED.converted_order_id IS NOT NULL
+            THEN NOW()
+            ELSE shopify_draft_orders.converted_at
+          END,
           updated_at = NOW()
       `
       upserted += 1

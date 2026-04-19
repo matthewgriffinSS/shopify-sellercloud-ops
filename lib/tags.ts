@@ -10,6 +10,7 @@ export const KNOWN_REPS = [
   'boggs',
   'bowman',
   'joe',
+  'jeff',
 ] as const
 
 export type Rep = (typeof KNOWN_REPS)[number]

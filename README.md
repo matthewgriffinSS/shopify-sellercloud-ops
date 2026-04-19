@@ -9,7 +9,8 @@ A Next.js app on Vercel that replaces five Shopify Flows (late fulfillment, draf
 | Old Shopify Flow | New equivalent |
 |---|---|
 | Late fulfillment (3-day wait → tag) | `check-late-fulfillments` cron + "Late fulfillments" table |
-| Draft order follow-up (7 rep branches) | `draft-orders-create` webhook + `DraftsByRep` component |
+| Draft order follow-up (7 rep branches) | `draft-orders-create` webhook + per-rep page at `/drafts/<rep>` |
+| Draft Order Follow Up Google Sheet (per-rep tabs) | Per-rep pages at `/drafts/<rep>` with inline-editable follow-up state |
 | Order reference (log every order) | `orders-create` webhook (orders table is the log) |
 | VIP order over $2000 | `orders-create` webhook (`is_vip` flag) + `VipOrders` component |
 | Abandoned cart $2000+ | `checkouts-abandoned` webhook + `AbandonedCarts` component |
@@ -135,6 +136,26 @@ Likely next steps:
 - **Inventory alerts** — pull low-stock SKUs from Sellercloud and surface them
 - **Action history drawer** — click a row to see its full `processing_actions` log
 - **Slack notifications** — post to #ops when a late order crosses a threshold
+
+## Draft follow-up pages (replaces the Google Sheet)
+
+The old "Draft Order Follow Up" sheet had one tab per rep with columns for email/SMS/phone follow-up checkboxes, dates, richpanel links, notes, and a "Can Delete" flag. That lives here now.
+
+**Per-rep pages.** From the main dashboard, click a rep's tile under "Draft order follow-ups by rep" to land on `/drafts/<rep>`. Each row is an open draft order assigned to that rep, with inline-editable checkboxes and text fields that save as you edit.
+
+**Service-tagged drafts are hidden.** Just like the old Flow, drafts tagged `sdss`, `install`, `rebuild`, or `shock service` are excluded. They're routed by the `service_type` column and handled separately.
+
+**Date auto-stamping.** Checking **SMS** or **Phone** auto-stamps the timestamp in the adjacent date column. Unchecking clears it. Same pattern for **Conv** (converted) — stamps `converted_at` when a rep manually closes a deal off-Shopify. When Shopify itself tells us the draft was converted into a real order (via `order_id`), the webhook auto-stamps `converted_at` too.
+
+**"Can delete" hides the row.** Checking Del flags the row as resolved and removes it from the view. The underlying record stays — this is a soft filter, not a destructive action.
+
+**Rep-owned fields are protected from webhook updates.** When Shopify sends a `draft_orders/update`, we refresh the customer/tags/status/totals but deliberately do NOT overwrite any of the follow-up columns a rep has edited. See the `ON CONFLICT` clause in `app/api/webhooks/shopify/draft-orders-create/route.ts`.
+
+### Running the database migration
+
+If you already deployed an earlier version of this app, run `db/migrations/001_draft_followups.sql` against your database **once** to add the new columns. Open the Neon SQL Editor, paste the file, and hit Run. It's idempotent (all `IF NOT EXISTS`), so it's safe to re-run.
+
+Fresh installs don't need to run the migration — `db/schema.sql` already includes the new columns.
 
 ## Troubleshooting
 

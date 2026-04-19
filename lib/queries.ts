@@ -99,8 +99,79 @@ export async function fetchDraftsByRep() {
       COUNT(*) FILTER (WHERE shopify_created_at < NOW() - INTERVAL '7 days')::text AS stale_count
     FROM shopify_draft_orders
     WHERE status = 'open'
+      AND service_type IS NULL
+      AND can_delete = FALSE
     GROUP BY COALESCE(assigned_rep, 'unassigned')
     ORDER BY SUM(total_price) DESC
+  `
+}
+
+export type DraftFollowupRow = {
+  id: string
+  name: string
+  customer_name: string | null
+  customer_email: string | null
+  customer_phone: string | null
+  total_price: string
+  status: string
+  tags: string[]
+  assigned_rep: string | null
+  service_type: string | null
+  converted_order_id: string | null
+  followed_up: boolean
+  email_followup: boolean
+  sms_followup: boolean
+  sms_date: Date | null
+  phone_followup: boolean
+  phone_call_date: Date | null
+  converted_at: Date | null
+  richpanel_link: string | null
+  rep_notes: string | null
+  can_delete: boolean
+  shopify_created_at: Date
+}
+
+/**
+ * Full detail for a rep's drafts page. Excludes service-tagged drafts
+ * (they're handled separately) and rows flagged can_delete.
+ * Pass 'unassigned' to get drafts with no assigned_rep.
+ */
+export async function fetchDraftsForRep(rep: string): Promise<DraftFollowupRow[]> {
+  const repFilter = rep === 'unassigned' ? null : rep
+  return sql<DraftFollowupRow[]>`
+    SELECT
+      id::text,
+      name,
+      customer_name,
+      customer_email,
+      customer_phone,
+      total_price::text,
+      status,
+      tags,
+      assigned_rep,
+      service_type,
+      converted_order_id::text,
+      followed_up,
+      email_followup,
+      sms_followup,
+      sms_date,
+      phone_followup,
+      phone_call_date,
+      converted_at,
+      richpanel_link,
+      rep_notes,
+      can_delete,
+      shopify_created_at
+    FROM shopify_draft_orders
+    WHERE status = 'open'
+      AND service_type IS NULL
+      AND can_delete = FALSE
+      AND (
+        (${repFilter}::text IS NULL AND assigned_rep IS NULL)
+        OR assigned_rep = ${repFilter}
+      )
+    ORDER BY shopify_created_at DESC
+    LIMIT 500
   `
 }
 

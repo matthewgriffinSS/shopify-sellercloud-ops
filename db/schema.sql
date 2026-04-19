@@ -31,18 +31,34 @@ CREATE TABLE IF NOT EXISTS shopify_draft_orders (
   name                  TEXT NOT NULL,
   customer_name         TEXT,
   customer_email        TEXT,
+  customer_phone        TEXT,
   total_price           NUMERIC(10, 2) NOT NULL,
   status                TEXT,
   tags                  TEXT[] DEFAULT '{}',
   assigned_rep          TEXT,
+  service_type          TEXT,
   converted_order_id    BIGINT,
+  -- Per-rep follow-up tracking. Replaces the "Draft Order Follow Up" Google Sheet.
+  followed_up           BOOLEAN     NOT NULL DEFAULT FALSE,
+  email_followup        BOOLEAN     NOT NULL DEFAULT FALSE,
+  sms_followup          BOOLEAN     NOT NULL DEFAULT FALSE,
+  sms_date              TIMESTAMPTZ,
+  phone_followup        BOOLEAN     NOT NULL DEFAULT FALSE,
+  phone_call_date       TIMESTAMPTZ,
+  converted_at          TIMESTAMPTZ,
+  richpanel_link        TEXT,
+  rep_notes             TEXT,
+  can_delete            BOOLEAN     NOT NULL DEFAULT FALSE,
   raw_payload           JSONB,
   shopify_created_at    TIMESTAMPTZ NOT NULL,
   created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_drafts_rep     ON shopify_draft_orders (assigned_rep);
-CREATE INDEX IF NOT EXISTS idx_drafts_status  ON shopify_draft_orders (status);
+CREATE INDEX IF NOT EXISTS idx_drafts_rep         ON shopify_draft_orders (assigned_rep);
+CREATE INDEX IF NOT EXISTS idx_drafts_status      ON shopify_draft_orders (status);
+CREATE INDEX IF NOT EXISTS idx_drafts_service     ON shopify_draft_orders (service_type);
+CREATE INDEX IF NOT EXISTS idx_drafts_can_delete  ON shopify_draft_orders (can_delete);
+CREATE INDEX IF NOT EXISTS idx_drafts_followed_up ON shopify_draft_orders (followed_up);
 
 CREATE TABLE IF NOT EXISTS abandoned_checkouts (
   id                BIGINT PRIMARY KEY,

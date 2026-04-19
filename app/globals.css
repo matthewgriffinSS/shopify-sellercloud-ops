@@ -794,3 +794,78 @@ tr.grand-total td {
 .tbl tr:last-child td { border-bottom: none; }
 .tbl tr:hover td { background: var(--bg3); }
 .tbl tr.done td { opacity: 0.5; }
+
+/* ===== Rep card as Link ===== */
+.rep-link { display: block; color: inherit; font-weight: inherit; text-decoration: none; }
+.rep-link:hover { color: inherit; }
+
+/* ===== Draft follow-up table (DraftFollowupTable.tsx) ===== */
+.dfu-wrap { overflow-x: auto; margin-top: 8px; }
+.dfu-tbl { width: 100%; border-collapse: collapse; font-size: 11px; min-width: 1400px; }
+.dfu-tbl thead th {
+  text-align: left;
+  padding: 8px 6px;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--bg3);
+  border-bottom: 2px solid var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.dfu-tbl tbody td {
+  padding: 6px 6px;
+  border-bottom: 1px solid var(--bg3);
+  vertical-align: middle;
+  color: var(--text);
+  white-space: nowrap;
+}
+.dfu-tbl tbody tr:hover td { background: var(--bg3); }
+.dfu-tbl tbody tr.dfu-err td { background: var(--danger-bg); }
+
+.dfu-inv { font-family: var(--font-mono); color: var(--text); font-size: 11px; }
+.dfu-email { color: var(--text2); max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.dfu-phone { color: var(--text2); font-family: var(--font-mono); font-size: 11px; }
+.dfu-date { color: var(--text3); font-family: var(--font-mono); font-size: 10px; }
+.dfu-tags { max-width: 180px; white-space: normal; }
+.dfu-tags .tag-p { margin-right: 4px; margin-bottom: 2px; display: inline-block; }
+.dfu-muted { color: var(--text3); }
+.dfu-id { color: var(--text3); font-family: var(--font-mono); font-size: 10px; }
+.dfu-value { color: var(--green); font-weight: 600; margin-top: 2px; }
+.dfu-errmsg { color: var(--danger-text); font-size: 10px; margin-top: 2px; white-space: normal; }
+.dfu-link { margin-left: 4px; color: var(--accent); font-weight: 600; }
+
+.dfu-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  padding: 4px 6px;
+  font-size: 11px;
+  width: 140px;
+  transition: border-color 0.15s;
+}
+.dfu-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--bg2);
+}
+.dfu-input::placeholder { color: var(--text3); }
+
+.dfu-tbl input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.dfu-hint {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text3);
+  font-style: italic;
+}

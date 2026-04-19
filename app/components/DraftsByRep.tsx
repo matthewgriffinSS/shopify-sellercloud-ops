@@ -1,6 +1,11 @@
+import Link from 'next/link'
 import { fetchDraftsByRep } from '@/lib/queries'
 import { formatMoney } from './shared'
 
+/**
+ * Summary grid of open drafts per rep. Each card links to /drafts/<rep>
+ * for the detailed spreadsheet-style follow-up view.
+ */
 export async function DraftsByRep() {
   const rows = await fetchDraftsByRep()
 
@@ -14,14 +19,18 @@ export async function DraftsByRep() {
           {rows.map((r) => {
             const stale = parseInt(r.stale_count)
             return (
-              <div key={r.assigned_rep} className="rep-c">
+              <Link
+                key={r.assigned_rep}
+                href={`/drafts/${r.assigned_rep}`}
+                className="rep-c rep-link"
+              >
                 <p className="rep-n">{r.assigned_rep}</p>
                 <p className="rep-ct">{r.count}</p>
                 <p className="rep-v">
                   {formatMoney(r.total_value)}
                   {stale > 0 && ` · ${stale} stale`}
                 </p>
-              </div>
+              </Link>
             )
           })}
         </div>
