@@ -41,15 +41,12 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // Pull both open and invoice_sent drafts. Completed drafts are already
-    // real orders — we don't need them here.
-    const { draft_orders: openDrafts } = await shopifyRequest<{ draft_orders: DraftOrder[] }>(
-      `/draft_orders.json?status=open&limit=250`,
-    )
-    const { draft_orders: sentDrafts } = await shopifyRequest<{ draft_orders: DraftOrder[] }>(
+    // Pull only invoice_sent drafts. The dashboard doesn't show "open" drafts
+    // (rep built the cart but never sent the invoice), so there's no point
+    // backfilling them. Completed drafts are already real orders.
+    const { draft_orders } = await shopifyRequest<{ draft_orders: DraftOrder[] }>(
       `/draft_orders.json?status=invoice_sent&limit=250`,
     )
-    const draft_orders = [...openDrafts, ...sentDrafts]
 
     let upserted = 0
     for (const draft of draft_orders) {
@@ -109,8 +106,8 @@ export async function POST(req: NextRequest) {
       upserted,
       unassignedAfterBackfill: parseInt(unassigned),
       note: parseInt(unassigned) > 0
-        ? 'Some drafts have no assigned rep — likely missing rep name in their tags. These will not appear in the rep grid.'
-        : 'All open drafts have an assigned rep.',
+        ? 'Some invoiced drafts have no assigned rep — likely missing rep name in their tags. These will not appear in the rep grid.'
+        : 'All invoiced drafts have an assigned rep.',
     })
   } catch (err) {
     return Response.json(
