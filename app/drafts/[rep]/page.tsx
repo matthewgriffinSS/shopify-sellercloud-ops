@@ -42,13 +42,13 @@ export default async function RepDraftsPage({
           <div>
             <div className="title">{title} · drafts</div>
             <div className="meta">
-              {rows.length} open draft{rows.length === 1 ? '' : 's'}
+              {rows.length} invoiced draft{rows.length === 1 ? '' : 's'}
             </div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <Link href="/" className="icon-btn">
-            ← Dashboard
+          <Link href="/sales" className="icon-btn">
+            ← Sales
           </Link>
         </div>
       </div>
@@ -60,8 +60,9 @@ export default async function RepDraftsPage({
         </div>
 
         <div className="footer">
-          Drafts with service tags (sdss / install / rebuild / shock service) are excluded from this
-          view.
+          Showing invoice-sent drafts from the last 60 days. Drafts still in "open" status
+          (invoice not yet sent) and drafts with service tags (sdss / install / rebuild /
+          shock service) are excluded from this view.
         </div>
       </main>
     </>

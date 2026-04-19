@@ -27,9 +27,9 @@ type DraftOrder = {
 
 /**
  * POST /api/admin/backfill-drafts
- * Pulls all open draft orders from Shopify and inserts them into our mirror,
- * bypassing webhooks. Run once after setting up to populate existing drafts,
- * or whenever you suspect the webhook dropped events.
+ * Pulls open and invoice_sent draft orders from Shopify and inserts them
+ * into our mirror, bypassing webhooks. Run once after setting up to populate
+ * existing drafts, or whenever you suspect the webhook dropped events.
  *
  * Same conflict rules as the webhook handler: never overwrite rep-owned
  * follow-up state.
@@ -41,10 +41,15 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const params = new URLSearchParams({ status: 'open', limit: '250' })
-    const { draft_orders } = await shopifyRequest<{ draft_orders: DraftOrder[] }>(
-      `/draft_orders.json?${params.toString()}`,
+    // Pull both open and invoice_sent drafts. Completed drafts are already
+    // real orders — we don't need them here.
+    const { draft_orders: openDrafts } = await shopifyRequest<{ draft_orders: DraftOrder[] }>(
+      `/draft_orders.json?status=open&limit=250`,
     )
+    const { draft_orders: sentDrafts } = await shopifyRequest<{ draft_orders: DraftOrder[] }>(
+      `/draft_orders.json?status=invoice_sent&limit=250`,
+    )
+    const draft_orders = [...openDrafts, ...sentDrafts]
 
     let upserted = 0
     for (const draft of draft_orders) {
@@ -86,11 +91,16 @@ export async function POST(req: NextRequest) {
       upserted += 1
     }
 
-    // Count how many drafts now lack an assigned_rep — useful diagnostic.
+    // Count how many invoice_sent drafts within 60 days now lack an assigned_rep.
+    // These won't appear in any rep's follow-up view.
     const [{ unassigned }] = await sql<{ unassigned: string }[]>`
       SELECT COUNT(*)::text AS unassigned
       FROM shopify_draft_orders
-      WHERE status = 'open' AND assigned_rep IS NULL
+      WHERE status = 'invoice_sent'
+        AND shopify_created_at > NOW() - INTERVAL '60 days'
+        AND service_type IS NULL
+        AND can_delete = FALSE
+        AND assigned_rep IS NULL
     `
 
     return Response.json({

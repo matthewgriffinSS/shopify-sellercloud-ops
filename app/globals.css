@@ -869,3 +869,60 @@ tr.grand-total td {
   color: var(--text3);
   font-style: italic;
 }
+
+/* ===== Landing page (home) ===== */
+.landing {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin: 48px 0;
+}
+.landing-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 40px 28px;
+  text-align: center;
+  color: inherit;
+  font-weight: inherit;
+  text-decoration: none;
+  transition: all 0.2s;
+  display: block;
+}
+.landing-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent);
+  background: rgba(232, 93, 36, 0.04);
+  color: inherit;
+}
+.landing-ic {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-industrial);
+  font-size: 28px;
+  letter-spacing: 2px;
+  margin: 0 auto 16px;
+  color: #fff;
+}
+.landing-sup .landing-ic { background: var(--blue); }
+.landing-sal .landing-ic { background: var(--green); }
+.landing-ttl {
+  font-family: var(--font-industrial);
+  font-size: 32px;
+  letter-spacing: 4px;
+  color: #fff;
+  text-transform: uppercase;
+  line-height: 1;
+  margin-bottom: 10px;
+}
+.landing-sub {
+  font-size: 12px;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 500;
+}

@@ -98,7 +98,8 @@ export async function fetchDraftsByRep() {
       COALESCE(SUM(total_price), 0)::text AS total_value,
       COUNT(*) FILTER (WHERE shopify_created_at < NOW() - INTERVAL '7 days')::text AS stale_count
     FROM shopify_draft_orders
-    WHERE status = 'open'
+    WHERE status = 'invoice_sent'
+      AND shopify_created_at > NOW() - INTERVAL '60 days'
       AND service_type IS NULL
       AND can_delete = FALSE
     GROUP BY COALESCE(assigned_rep, 'unassigned')
@@ -163,7 +164,8 @@ export async function fetchDraftsForRep(rep: string): Promise<DraftFollowupRow[]
       can_delete,
       shopify_created_at
     FROM shopify_draft_orders
-    WHERE status = 'open'
+    WHERE status = 'invoice_sent'
+      AND shopify_created_at > NOW() - INTERVAL '60 days'
       AND service_type IS NULL
       AND can_delete = FALSE
       AND (

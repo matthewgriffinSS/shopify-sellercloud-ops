@@ -13,7 +13,7 @@ export async function DraftsByRep() {
     <div className="card">
       <h3>Draft order follow-ups by rep</h3>
       {rows.length === 0 ? (
-        <div className="empty">No open drafts.</div>
+        <div className="empty">No invoiced drafts in the last 60 days.</div>
       ) : (
         <div className="rep-grid">
           {rows.map((r) => {

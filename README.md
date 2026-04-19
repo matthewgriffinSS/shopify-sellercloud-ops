@@ -137,13 +137,27 @@ Likely next steps:
 - **Action history drawer** — click a row to see its full `processing_actions` log
 - **Slack notifications** — post to #ops when a late order crosses a threshold
 
+## Dashboard layout
+
+The dashboard is split into two clearly separated routes so each team only sees what they actually work on:
+
+- **`/support`** — Late fulfillments + VIP orders (Support team)
+- **`/sales`** — Draft follow-ups by rep + abandoned carts (Sales team)
+- **`/`** — Landing page with two buttons to choose
+
+Both team pages share the top-line Metrics strip and each has a one-click link to the other page in the header.
+
 ## Draft follow-up pages (replaces the Google Sheet)
 
 The old "Draft Order Follow Up" sheet had one tab per rep with columns for email/SMS/phone follow-up checkboxes, dates, richpanel links, notes, and a "Can Delete" flag. That lives here now.
 
-**Per-rep pages.** From the main dashboard, click a rep's tile under "Draft order follow-ups by rep" to land on `/drafts/<rep>`. Each row is an open draft order assigned to that rep, with inline-editable checkboxes and text fields that save as you edit.
+**Per-rep pages.** From `/sales`, click a rep's tile under "Draft order follow-ups by rep" to land on `/drafts/<rep>`. Each row is a draft order assigned to that rep, with inline-editable checkboxes and text fields that save as you edit.
 
-**Service-tagged drafts are hidden.** Just like the old Flow, drafts tagged `sdss`, `install`, `rebuild`, or `shock service` are excluded. They're routed by the `service_type` column and handled separately.
+**Filter applied automatically:**
+- Status must be `invoice_sent` (Shopify's state once the invoice email has actually gone out). Drafts still sitting in `open` status — rep built the cart but never sent the invoice — are excluded because there's nothing yet for the customer to respond to.
+- Created within the last 60 days. Older drafts are considered stale / not worth chasing.
+- Service tags (`sdss` / `install` / `rebuild` / `shock service`) are excluded — just like the old Shopify Flow skipped them.
+- Rows flagged `can_delete` are hidden.
 
 **Date auto-stamping.** Checking **SMS** or **Phone** auto-stamps the timestamp in the adjacent date column. Unchecking clears it. Same pattern for **Conv** (converted) — stamps `converted_at` when a rep manually closes a deal off-Shopify. When Shopify itself tells us the draft was converted into a real order (via `order_id`), the webhook auto-stamps `converted_at` too.
 

@@ -68,7 +68,7 @@ export function DraftFollowupTable({ rows: initialRows }: { rows: DraftFollowupR
   }
 
   if (rows.length === 0) {
-    return <div className="empty">No open drafts for this rep.</div>
+    return <div className="empty">No invoiced drafts for this rep in the last 60 days.</div>
   }
 
   return (
