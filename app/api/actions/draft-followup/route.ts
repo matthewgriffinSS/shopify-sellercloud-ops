@@ -27,6 +27,7 @@ const FIELDS = [
   'richpanel_link',
   'rep_notes',
   'can_delete',
+  'reset_followups',
 ] as const
 type Field = (typeof FIELDS)[number]
 
@@ -120,6 +121,22 @@ async function updateField(id: string, field: Field, value: boolean | string | n
   }
   if (field === 'can_delete') {
     await sql`UPDATE shopify_draft_orders SET can_delete = ${bool}, updated_at = NOW() WHERE id = ${id}::bigint`
+    return
+  }
+  if (field === 'reset_followups') {
+    // Clears all three follow-up flags + their dates in one shot. Used by
+    // the "Chase again" button — puts a draft back on the Needs follow-up
+    // tab so the rep can log a fresh round. `value` is ignored.
+    await sql`
+      UPDATE shopify_draft_orders
+      SET email_followup = FALSE,
+          sms_followup = FALSE,
+          sms_date = NULL,
+          phone_followup = FALSE,
+          phone_call_date = NULL,
+          updated_at = NOW()
+      WHERE id = ${id}::bigint
+    `
     return
   }
 

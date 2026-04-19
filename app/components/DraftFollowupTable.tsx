@@ -12,22 +12,31 @@ type Field =
   | 'richpanel_link'
   | 'rep_notes'
   | 'can_delete'
+  | 'reset_followups'
 
 type Row = DraftFollowupRow & { _err?: string }
 
-type TabId = 'all' | 'stale' | 'first_touch'
+type TabId = 'needs_followup' | 'waiting'
 
 const TABS: Array<{ id: TabId; label: string; hint: string }> = [
-  { id: 'all', label: 'All', hint: 'Every invoiced draft for this rep' },
-  { id: 'stale', label: 'Stale', hint: '7+ days old, no follow-up yet' },
-  { id: 'first_touch', label: 'Needs first touch', hint: 'No email, SMS, or call logged' },
+  { id: 'needs_followup', label: 'Needs follow-up', hint: 'No email, SMS, or call logged yet' },
+  { id: 'waiting', label: 'Waiting', hint: 'Follow-up logged. Waiting on customer.' },
 ]
 
 /**
  * Spreadsheet-style follow-up editor for a single rep's invoiced drafts.
  *
- * Columns: Invoice # · Amount · Phone · Date Created · Email · SMS · SMS Date ·
- *          Phone · Phone Date · Richpanel · Notes · Close Out
+ * Columns: Invoice # · Amount · Phone · Date Created · SMS · SMS Date ·
+ *          Phone · Phone Date · Richpanel · Notes · Actions
+ *
+ * Note: Email column deliberately absent. Shopify Flow "Draft Auto Reply"
+ * sends invoice emails automatically on a weekly schedule (tagging drafts
+ * invoice-sent:1, invoice-sent:2 as each round goes out), so there's
+ * nothing for a rep to track there.
+ *
+ * Two tabs:
+ *  - Needs follow-up: no SMS or phone call logged yet
+ *  - Waiting: at least one follow-up logged
  *
  * Auto-hidden from this view (via the server query):
  *  - Drafts that Shopify converted to a real order (converted_order_id set)
@@ -47,7 +56,7 @@ export function DraftFollowupTable({
 }) {
   const router = useRouter()
   const [rows, setRows] = useState<Row[]>(initialRows)
-  const [activeTab, setActiveTab] = useState<TabId>('all')
+  const [activeTab, setActiveTab] = useState<TabId>('needs_followup')
   const [, startTransition] = useTransition()
 
   useEffect(() => {
@@ -56,18 +65,13 @@ export function DraftFollowupTable({
 
   // Compute filtered rows and per-tab counts. Recomputed when rows change.
   const { filteredRows, counts } = useMemo(() => {
-    const counts: Record<TabId, number> = { all: 0, stale: 0, first_touch: 0 }
+    const counts: Record<TabId, number> = { needs_followup: 0, waiting: 0 }
     for (const r of rows) {
-      counts.all += 1
-      if (isStale(r)) counts.stale += 1
-      if (isNeedsFirstTouch(r)) counts.first_touch += 1
+      if (hasAnyFollowup(r)) counts.waiting += 1
+      else counts.needs_followup += 1
     }
     const filteredRows =
-      activeTab === 'stale'
-        ? rows.filter(isStale)
-        : activeTab === 'first_touch'
-          ? rows.filter(isNeedsFirstTouch)
-          : rows
+      activeTab === 'waiting' ? rows.filter(hasAnyFollowup) : rows.filter(isNeedsFollowup)
     return { filteredRows, counts }
   }, [rows, activeTab])
 
@@ -119,14 +123,13 @@ export function DraftFollowupTable({
                 <th>Amount</th>
                 <th>Phone #</th>
                 <th>Date Created</th>
-                <th title="Email follow-up">Email</th>
                 <th title="SMS follow-up">SMS</th>
                 <th>SMS Date</th>
                 <th title="Phone follow-up">Phone</th>
                 <th>Phone Date</th>
                 <th>Richpanel</th>
                 <th>Notes</th>
-                <th title="Close out off-Shopify sales or dismissed drafts">Close Out</th>
+                <th title="Chase again (clears follow-ups) or close out">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -140,8 +143,8 @@ export function DraftFollowupTable({
 
       <div className="dfu-hint">
         Converted drafts disappear automatically when Shopify reports them as orders.
-        Use <b>Close Out</b> to hide off-Shopify sales (phone/check) or drafts that won&rsquo;t
-        convert. Changes save as you edit.
+        Use <b>↻</b> to chase again (clears follow-ups) or the <b>Close Out</b> checkbox to
+        remove a draft that won&rsquo;t convert.
       </div>
     </>
   )
@@ -149,34 +152,24 @@ export function DraftFollowupTable({
 
 // -------- Tab filter predicates --------
 
-const STALE_MS = 7 * 24 * 60 * 60 * 1000
-
-function isStale(r: DraftFollowupRow): boolean {
-  const created = toDate(r.shopify_created_at)
-  if (!created) return false
-  const ageMs = Date.now() - created.getTime()
-  if (ageMs < STALE_MS) return false
-  // "Stale" is old AND no follow-up yet. A rep who's already chased this
-  // draft knows the ball's in the customer's court.
-  return !hasAnyFollowup(r)
-}
-
-function isNeedsFirstTouch(r: DraftFollowupRow): boolean {
+function isNeedsFollowup(r: DraftFollowupRow): boolean {
   return !hasAnyFollowup(r)
 }
 
 function hasAnyFollowup(r: DraftFollowupRow): boolean {
-  return r.email_followup || r.sms_followup || r.phone_followup
+  // Note: email_followup is ignored here. Shopify Flow sends invoices
+  // automatically on a weekly schedule (see invoice-sent:1 / :2 tags) —
+  // a rep doesn't log "I emailed them," so only SMS and Phone, which
+  // the rep actually drives, determine tab placement.
+  return r.sms_followup || r.phone_followup
 }
 
 function emptyMessageFor(tab: TabId): string {
   switch (tab) {
-    case 'stale':
-      return 'Nothing stale. Every draft 7+ days old has at least one follow-up logged.'
-    case 'first_touch':
-      return 'Every draft has at least one follow-up logged. Nice.'
-    case 'all':
-      return 'No invoiced drafts for this rep in the last 60 days.'
+    case 'needs_followup':
+      return 'Nothing needs follow-up. Every draft has at least one contact logged.'
+    case 'waiting':
+      return 'Nothing waiting. No drafts have been followed up yet.'
   }
 }
 
@@ -208,6 +201,19 @@ function applyLocal(r: Row, field: Field, value: boolean | string | null): Row {
       return { ...r, richpanel_link: typeof value === 'string' ? value : null, _err: undefined }
     case 'rep_notes':
       return { ...r, rep_notes: typeof value === 'string' ? value : null, _err: undefined }
+    case 'reset_followups':
+      // Clears all three follow-up flags + their dates, returning the row
+      // to the Needs follow-up tab. Useful when a customer went cold and
+      // the rep wants to chase again.
+      return {
+        ...r,
+        email_followup: false,
+        sms_followup: false,
+        sms_date: null,
+        phone_followup: false,
+        phone_call_date: null,
+        _err: undefined,
+      }
   }
 }
 
@@ -235,14 +241,7 @@ function DraftRow({
       </td>
       <td className="dfu-amt">{formatMoney(row.total_price)}</td>
       <td className="dfu-phone">{row.customer_phone ?? '(blank)'}</td>
-      <td className="dfu-date">{fmtDateTime(row.shopify_created_at)}</td>
-      <td>
-        <input
-          type="checkbox"
-          checked={row.email_followup}
-          onChange={(e) => onChange(row.id, 'email_followup', e.target.checked)}
-        />
-      </td>
+      <td className="dfu-date">{fmtDate(row.shopify_created_at)}</td>
       <td>
         <input
           type="checkbox"
@@ -260,23 +259,25 @@ function DraftRow({
       </td>
       <td className="dfu-date">{fmtDate(row.phone_call_date)}</td>
       <td>
-        <DebouncedInput
-          value={row.richpanel_link ?? ''}
-          onCommit={(v) => onChange(row.id, 'richpanel_link', v)}
-          placeholder="URL"
-          type="url"
-        />
-        {row.richpanel_link && (
-          <a
-            href={row.richpanel_link}
-            target="_blank"
-            rel="noreferrer"
-            className="dfu-link"
-            title="Open link"
-          >
-            ↗
-          </a>
-        )}
+        <div className="dfu-link-cell">
+          <DebouncedInput
+            value={row.richpanel_link ?? ''}
+            onCommit={(v) => onChange(row.id, 'richpanel_link', v)}
+            placeholder="URL"
+            type="url"
+          />
+          {row.richpanel_link && (
+            <a
+              href={row.richpanel_link}
+              target="_blank"
+              rel="noreferrer"
+              className="dfu-link"
+              title="Open link"
+            >
+              ↗
+            </a>
+          )}
+        </div>
       </td>
       <td>
         <DebouncedInput
@@ -288,12 +289,31 @@ function DraftRow({
         {row._err && <div className="dfu-errmsg">{row._err}</div>}
       </td>
       <td>
-        <input
-          type="checkbox"
-          checked={row.can_delete}
-          onChange={(e) => onChange(row.id, 'can_delete', e.target.checked)}
-          title="Hide this draft from the follow-up view"
-        />
+        <div className="dfu-actions">
+          {hasAnyFollowup(row) && (
+            <button
+              className="dfu-chase"
+              onClick={() => {
+                if (
+                  confirm(
+                    `Chase ${row.name} again? This clears the Email/SMS/Phone checkmarks and dates so you can log new follow-ups.`,
+                  )
+                ) {
+                  onChange(row.id, 'reset_followups', true)
+                }
+              }}
+              title="Chase again (clears follow-up checkmarks)"
+            >
+              ↻
+            </button>
+          )}
+          <input
+            type="checkbox"
+            checked={row.can_delete}
+            onChange={(e) => onChange(row.id, 'can_delete', e.target.checked)}
+            title="Close out: hide this draft permanently"
+          />
+        </div>
       </td>
     </tr>
   )
@@ -307,14 +327,19 @@ function toDate(d: Date | string | null): Date | null {
   return isNaN(date.getTime()) ? null : date
 }
 
+/**
+ * Format as mm/dd/yy in the viewer's local timezone. Using local time
+ * (not UTC) means a draft created at 11pm Eastern displays as the same
+ * date the rep actually remembers working on it.
+ */
 function fmtDate(d: Date | string | null): string {
   const date = toDate(d)
-  return date ? date.toISOString().slice(0, 16).replace('T', ' ') : ''
-}
-
-function fmtDateTime(d: Date | string | null): string {
-  const date = toDate(d)
-  return date ? date.toISOString().replace(/\.\d{3}Z$/, 'Z') : ''
+  if (!date) return ''
+  return date.toLocaleDateString('en-US', {
+    month: '2-digit',
+    day: '2-digit',
+    year: '2-digit',
+  })
 }
 
 /**

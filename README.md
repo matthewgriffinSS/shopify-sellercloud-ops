@@ -154,13 +154,12 @@ The old "Draft Order Follow Up" sheet had one tab per rep with columns for email
 **Per-rep pages.** From `/sales`, click a rep's tile under "Draft order follow-ups by rep" to land on `/drafts/<rep>`. Each row is a draft order assigned to that rep, with inline-editable checkboxes and text fields that save as you edit.
 
 **Tabs on each rep page:**
-- **All** — every draft visible for this rep
-- **Stale** — 7+ days old with no follow-up logged yet (the ones actually worth chasing)
-- **Needs first touch** — no email, SMS, or call logged
+- **Needs follow-up** — no email, SMS, or call logged yet. The pile to work first.
+- **Waiting** — at least one follow-up logged, waiting on the customer. From here a draft either auto-removes (customer pays → converted), gets closed out (dead lead, off-Shopify sale), or gets put back on follow-up via the ↻ Chase again button.
 
 Each tab shows a count badge so reps can see at a glance which pile to work first.
 
-**Columns:** Invoice # · Phone · Date Created · Tags · Email · SMS · SMS Date · Phone · Phone Date · Richpanel · Notes · Close Out · Draft ID. Customer email was intentionally dropped — reps can click the invoice # to reach Shopify for full customer info.
+**Columns:** Invoice # · Amount · Phone · Date Created · Email · SMS · SMS Date · Phone · Phone Date · Richpanel · Notes · Actions. Customer email was intentionally dropped — reps can click the invoice # to reach the draft directly in Shopify admin.
 
 **Auto-hidden rows:**
 - Status must be `invoice_sent`. Drafts still in `open` status (invoice not yet sent) are excluded.
@@ -171,7 +170,9 @@ Each tab shows a count badge so reps can see at a glance which pile to work firs
 
 **Date auto-stamping.** Checking **SMS** or **Phone** auto-stamps the timestamp in the adjacent date column. Unchecking clears it.
 
-**"Close Out" for off-Shopify sales.** Checking Close Out hides the row. Use it for phone/check sales where the customer paid outside Shopify (so the draft never converts automatically), or drafts that won't convert at all. The underlying record stays — this is a soft filter, not destructive.
+**↻ Chase again** (Actions column, shown only on Waiting tab rows): clears the three follow-up checkmarks + their dates in one click, returning the draft to the Needs follow-up tab so the rep can log a fresh round. Prompts for confirmation before clearing.
+
+**Close Out** (Actions column): hides the row permanently. Use for phone/check sales (customer paid outside Shopify so the draft never converts automatically) or drafts that won't convert at all. The underlying record stays — this is a soft filter, not destructive.
 
 **Rep-owned fields are protected from webhook updates.** When Shopify sends a `draft_orders/update`, we refresh the customer/tags/status/totals but deliberately do NOT overwrite any of the follow-up columns a rep has edited. See the `ON CONFLICT` clause in `app/api/webhooks/shopify/draft-orders-create/route.ts`.
 

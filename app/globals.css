@@ -801,7 +801,12 @@ tr.grand-total td {
 
 /* ===== Draft follow-up table (DraftFollowupTable.tsx) ===== */
 .dfu-wrap { overflow-x: auto; margin-top: 8px; }
-.dfu-tbl { width: 100%; border-collapse: collapse; font-size: 11px; min-width: 1400px; }
+.dfu-tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  table-layout: fixed;
+}
 .dfu-tbl thead th {
   text-align: left;
   padding: 8px 6px;
@@ -816,6 +821,8 @@ tr.grand-total td {
   position: sticky;
   top: 0;
   z-index: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .dfu-tbl tbody td {
   padding: 6px 6px;
@@ -823,19 +830,29 @@ tr.grand-total td {
   vertical-align: middle;
   color: var(--text);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .dfu-tbl tbody tr:hover td { background: var(--bg3); }
 .dfu-tbl tbody tr.dfu-err td { background: var(--danger-bg); }
 
+/* Column widths. Fixed columns sum to about 600px; Richpanel + Notes flex
+   to fill the rest (Notes gets the larger share). */
+.dfu-tbl th:nth-child(1)  { width: 72px;  } /* Invoice # */
+.dfu-tbl th:nth-child(2)  { width: 70px;  } /* Amount */
+.dfu-tbl th:nth-child(3)  { width: 110px; } /* Phone # */
+.dfu-tbl th:nth-child(4)  { width: 72px;  } /* Date Created */
+.dfu-tbl th:nth-child(5)  { width: 42px;  } /* SMS */
+.dfu-tbl th:nth-child(6)  { width: 72px;  } /* SMS Date */
+.dfu-tbl th:nth-child(7)  { width: 52px;  } /* Phone */
+.dfu-tbl th:nth-child(8)  { width: 72px;  } /* Phone Date */
+.dfu-tbl th:nth-child(9)  { width: 22%;   } /* Richpanel — flex */
+.dfu-tbl th:nth-child(10) { width: auto;  } /* Notes — fills remainder */
+.dfu-tbl th:nth-child(11) { width: 76px;  } /* Actions */
+
 .dfu-inv { font-family: var(--font-mono); color: var(--text); font-size: 11px; }
-.dfu-email { color: var(--text2); max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
 .dfu-phone { color: var(--text2); font-family: var(--font-mono); font-size: 11px; }
-.dfu-date { color: var(--text3); font-family: var(--font-mono); font-size: 10px; }
-.dfu-tags { max-width: 180px; white-space: normal; }
-.dfu-tags .tag-p { margin-right: 4px; margin-bottom: 2px; display: inline-block; }
-.dfu-muted { color: var(--text3); }
-.dfu-id { color: var(--text3); font-family: var(--font-mono); font-size: 10px; }
-.dfu-value { color: var(--green); font-weight: 600; margin-top: 2px; }
+.dfu-date { color: var(--text3); font-family: var(--font-mono); font-size: 11px; }
 .dfu-errmsg { color: var(--danger-text); font-size: 10px; margin-top: 2px; white-space: normal; }
 .dfu-link { margin-left: 4px; color: var(--accent); font-weight: 600; }
 
@@ -846,7 +863,8 @@ tr.grand-total td {
   color: var(--text);
   padding: 4px 6px;
   font-size: 11px;
-  width: 140px;
+  width: 100%;
+  min-width: 0;
   transition: border-color 0.15s;
 }
 .dfu-input:focus {
@@ -989,4 +1007,46 @@ tr.grand-total td {
   font-family: var(--font-mono);
   font-size: 11px;
   white-space: nowrap;
+}
+
+/* Richpanel cell: input stretches to fill, arrow pins to the right */
+.dfu-link-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.dfu-link-cell .dfu-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Actions column: chase-again button + close-out checkbox */
+.dfu-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-start;
+}
+.dfu-chase {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dfu-chase:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
 }
