@@ -27,9 +27,10 @@ type DraftOrder = {
 
 /**
  * POST /api/admin/backfill-drafts
- * Pulls open and invoice_sent draft orders from Shopify and inserts them
- * into our mirror, bypassing webhooks. Run once after setting up to populate
- * existing drafts, or whenever you suspect the webhook dropped events.
+ * Pulls invoice_sent draft orders from Shopify (updated in the last 60 days)
+ * and inserts them into our mirror, bypassing webhooks. Run once after setting
+ * up to populate existing drafts, or whenever you suspect the webhook dropped
+ * events.
  *
  * Same conflict rules as the webhook handler: never overwrite rep-owned
  * follow-up state.
@@ -41,11 +42,13 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // Pull only invoice_sent drafts. The dashboard doesn't show "open" drafts
-    // (rep built the cart but never sent the invoice), so there's no point
-    // backfilling them. Completed drafts are already real orders.
+    // Only pull drafts updated in the last 60 days. The dashboard filters
+    // to shopify_created_at > NOW() - 60 days anyway, and Shopify's REST
+    // list endpoint returns oldest-first by default — without this filter
+    // we'd just get the 250 oldest invoice_sent drafts (all too old to show).
+    const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString()
     const { draft_orders } = await shopifyRequest<{ draft_orders: DraftOrder[] }>(
-      `/draft_orders.json?status=invoice_sent&limit=250`,
+      `/draft_orders.json?status=invoice_sent&limit=250&updated_at_min=${encodeURIComponent(sixtyDaysAgo)}`,
     )
 
     let upserted = 0
@@ -88,6 +91,17 @@ export async function POST(req: NextRequest) {
       upserted += 1
     }
 
+    // How many of the backfilled drafts will actually appear on the dashboard?
+    // (i.e. match the exact filter that /sales and /drafts/<rep> use.)
+    const [{ visible }] = await sql<{ visible: string }[]>`
+      SELECT COUNT(*)::text AS visible
+      FROM shopify_draft_orders
+      WHERE status = 'invoice_sent'
+        AND shopify_created_at > NOW() - INTERVAL '60 days'
+        AND service_type IS NULL
+        AND can_delete = FALSE
+    `
+
     // Count how many invoice_sent drafts within 60 days now lack an assigned_rep.
     // These won't appear in any rep's follow-up view.
     const [{ unassigned }] = await sql<{ unassigned: string }[]>`
@@ -100,14 +114,28 @@ export async function POST(req: NextRequest) {
         AND assigned_rep IS NULL
     `
 
+    // Show the date range of what we fetched so it's obvious if we pulled
+    // nothing recent.
+    const dates = draft_orders
+      .map((d) => d.created_at)
+      .sort()
+    const dateRange =
+      dates.length > 0
+        ? { earliest: dates[0], latest: dates[dates.length - 1] }
+        : null
+
     return Response.json({
       ok: true,
       fetched: draft_orders.length,
       upserted,
+      visibleOnDashboard: parseInt(visible),
       unassignedAfterBackfill: parseInt(unassigned),
-      note: parseInt(unassigned) > 0
-        ? 'Some invoiced drafts have no assigned rep — likely missing rep name in their tags. These will not appear in the rep grid.'
-        : 'All invoiced drafts have an assigned rep.',
+      dateRange,
+      note: parseInt(visible) === 0
+        ? 'Backfill ran but nothing matches the dashboard filter (invoice_sent, last 60 days, no service tag, not flagged delete). Check dateRange above — if empty or all old, you likely have no recent invoiced drafts.'
+        : parseInt(unassigned) > 0
+          ? `${visible} drafts visible on dashboard. ${unassigned} lack an assigned rep (missing rep name in tags) and won't appear in any rep's grid.`
+          : `All ${visible} invoiced drafts have an assigned rep.`,
     })
   } catch (err) {
     return Response.json(
