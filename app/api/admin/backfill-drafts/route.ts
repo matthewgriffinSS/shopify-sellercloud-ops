@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { sql } from '@/lib/db'
-import { shopifyRequest } from '@/lib/shopify'
+import { shopifyRequestRaw, parseNextPageInfo } from '@/lib/shopify'
 import { parseTags } from '@/lib/tags'
 import { verifyCookieValue } from '@/lib/auth'
 
@@ -42,14 +42,37 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // Only pull drafts updated in the last 60 days. The dashboard filters
-    // to shopify_created_at > NOW() - 60 days anyway, and Shopify's REST
-    // list endpoint returns oldest-first by default — without this filter
-    // we'd just get the 250 oldest invoice_sent drafts (all too old to show).
+    // Paginate through invoice_sent drafts updated in the last 60 days.
+    // Shopify REST lists are cursor-paginated via the Link header. With more
+    // than 250 results a single page only returns the oldest 250, which is
+    // why an unpaginated fetch was missing yesterday's drafts.
+    //
+    // Quirk: once you include page_info, you CANNOT include status/
+    // updated_at_min (those are baked into the cursor). Only limit carries.
     const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString()
-    const { draft_orders } = await shopifyRequest<{ draft_orders: DraftOrder[] }>(
-      `/draft_orders.json?status=invoice_sent&limit=250&updated_at_min=${encodeURIComponent(sixtyDaysAgo)}`,
-    )
+    const initialQuery = new URLSearchParams({
+      status: 'invoice_sent',
+      limit: '250',
+      updated_at_min: sixtyDaysAgo,
+    })
+
+    const draft_orders: DraftOrder[] = []
+    let nextPath: string | null = `/draft_orders.json?${initialQuery.toString()}`
+    let pageCount = 0
+    const MAX_PAGES = 10 // safety cap: 10 × 250 = 2500 drafts per run
+
+    while (nextPath && pageCount < MAX_PAGES) {
+      const { body, linkHeader } = await shopifyRequestRaw<{ draft_orders: DraftOrder[] }>(
+        nextPath,
+      )
+      draft_orders.push(...body.draft_orders)
+      pageCount += 1
+
+      const cursor = parseNextPageInfo(linkHeader)
+      nextPath = cursor ? `/draft_orders.json?limit=250&page_info=${encodeURIComponent(cursor)}` : null
+    }
+
+    const truncated = pageCount >= MAX_PAGES && nextPath !== null
 
     let upserted = 0
     for (const draft of draft_orders) {
@@ -128,14 +151,18 @@ export async function POST(req: NextRequest) {
       ok: true,
       fetched: draft_orders.length,
       upserted,
+      pagesFetched: pageCount,
+      truncated,
       visibleOnDashboard: parseInt(visible),
       unassignedAfterBackfill: parseInt(unassigned),
       dateRange,
-      note: parseInt(visible) === 0
-        ? 'Backfill ran but nothing matches the dashboard filter (invoice_sent, last 60 days, no service tag, not flagged delete). Check dateRange above — if empty or all old, you likely have no recent invoiced drafts.'
-        : parseInt(unassigned) > 0
-          ? `${visible} drafts visible on dashboard. ${unassigned} lack an assigned rep (missing rep name in tags) and won't appear in any rep's grid.`
-          : `All ${visible} invoiced drafts have an assigned rep.`,
+      note: truncated
+        ? `Hit the ${MAX_PAGES}-page safety cap (${MAX_PAGES * 250} drafts). There are more invoiced drafts in Shopify than we fetched this run. Rerun to pick up the rest.`
+        : parseInt(visible) === 0
+          ? 'Backfill ran but nothing matches the dashboard filter (invoice_sent, last 60 days, no service tag, not flagged delete). Check dateRange above — if empty or all old, you likely have no recent invoiced drafts.'
+          : parseInt(unassigned) > 0
+            ? `${visible} drafts visible on dashboard. ${unassigned} lack an assigned rep (missing rep name in tags) and won't appear in any rep's grid.`
+            : `All ${visible} invoiced drafts have an assigned rep.`,
     })
   } catch (err) {
     return Response.json(

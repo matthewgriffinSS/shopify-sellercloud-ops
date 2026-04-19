@@ -80,6 +80,20 @@ const API_VERSION = '2025-01'
  * Gets a fresh token automatically if needed.
  */
 export async function shopifyRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const { body } = await shopifyRequestRaw<T>(path, init)
+  return body
+}
+
+/**
+ * Like shopifyRequest but also returns the Link header — needed for
+ * paginating list endpoints. Shopify's REST pagination is cursor-based:
+ * response has `Link: <...?page_info=xyz>; rel="next"`.
+ * See: https://shopify.dev/docs/api/usage/pagination-rest
+ */
+export async function shopifyRequestRaw<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<{ body: T; linkHeader: string | null }> {
   const token = await getAccessToken()
   const res = await fetch(
     `https://${process.env.SHOPIFY_STORE_DOMAIN}/admin/api/${API_VERSION}${path}`,
@@ -97,7 +111,30 @@ export async function shopifyRequest<T>(path: string, init?: RequestInit): Promi
     const body = await res.text()
     throw new Error(`Shopify ${path}: ${res.status} ${body}`)
   }
-  return res.json() as Promise<T>
+  const body = (await res.json()) as T
+  return { body, linkHeader: res.headers.get('link') }
+}
+
+/**
+ * Extract the page_info cursor from a Shopify Link header.
+ * Returns null if there's no next page.
+ */
+export function parseNextPageInfo(linkHeader: string | null): string | null {
+  if (!linkHeader) return null
+  // Format: <https://store.myshopify.com/admin/api/2025-01/draft_orders.json?page_info=xyz&limit=250>; rel="next", <...>; rel="previous"
+  const parts = linkHeader.split(',')
+  for (const part of parts) {
+    const match = part.match(/<([^>]+)>;\s*rel="next"/)
+    if (match) {
+      try {
+        const url = new URL(match[1])
+        return url.searchParams.get('page_info')
+      } catch {
+        return null
+      }
+    }
+  }
+  return null
 }
 
 /**
