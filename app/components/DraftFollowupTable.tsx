@@ -26,8 +26,8 @@ const TABS: Array<{ id: TabId; label: string; hint: string }> = [
 /**
  * Spreadsheet-style follow-up editor for a single rep's invoiced drafts.
  *
- * Columns: Invoice # · Phone · Date Created · Tags · Email · SMS · SMS Date ·
- *          Phone · Phone Date · Richpanel · Notes · Close Out · Draft ID
+ * Columns: Invoice # · Amount · Phone · Date Created · Email · SMS · SMS Date ·
+ *          Phone · Phone Date · Richpanel · Notes · Close Out
  *
  * Auto-hidden from this view (via the server query):
  *  - Drafts that Shopify converted to a real order (converted_order_id set)
@@ -38,7 +38,13 @@ const TABS: Array<{ id: TabId; label: string; hint: string }> = [
  * Every change POSTs to /api/actions/draft-followup. The UI updates
  * optimistically and reverts on error.
  */
-export function DraftFollowupTable({ rows: initialRows }: { rows: DraftFollowupRow[] }) {
+export function DraftFollowupTable({
+  rows: initialRows,
+  storeDomain,
+}: {
+  rows: DraftFollowupRow[]
+  storeDomain: string | null
+}) {
   const router = useRouter()
   const [rows, setRows] = useState<Row[]>(initialRows)
   const [activeTab, setActiveTab] = useState<TabId>('all')
@@ -110,9 +116,9 @@ export function DraftFollowupTable({ rows: initialRows }: { rows: DraftFollowupR
             <thead>
               <tr>
                 <th>Invoice #</th>
+                <th>Amount</th>
                 <th>Phone #</th>
                 <th>Date Created</th>
-                <th>Tags</th>
                 <th title="Email follow-up">Email</th>
                 <th title="SMS follow-up">SMS</th>
                 <th>SMS Date</th>
@@ -121,12 +127,11 @@ export function DraftFollowupTable({ rows: initialRows }: { rows: DraftFollowupR
                 <th>Richpanel</th>
                 <th>Notes</th>
                 <th title="Close out off-Shopify sales or dismissed drafts">Close Out</th>
-                <th>Draft ID</th>
               </tr>
             </thead>
             <tbody>
               {filteredRows.map((r) => (
-                <DraftRow key={r.id} row={r} onChange={patch} />
+                <DraftRow key={r.id} row={r} onChange={patch} storeDomain={storeDomain} />
               ))}
             </tbody>
           </table>
@@ -209,26 +214,28 @@ function applyLocal(r: Row, field: Field, value: boolean | string | null): Row {
 function DraftRow({
   row,
   onChange,
+  storeDomain,
 }: {
   row: Row
   onChange: (id: string, field: Field, value: boolean | string | null) => void
+  storeDomain: string | null
 }) {
+  const draftUrl = storeDomain ? `https://${storeDomain}/admin/draft_orders/${row.id}` : null
+
   return (
     <tr className={row._err ? 'dfu-err' : undefined}>
-      <td className="dfu-inv">{row.name}</td>
-      <td className="dfu-phone">{row.customer_phone ?? '(blank)'}</td>
-      <td className="dfu-date">{fmtDateTime(row.shopify_created_at)}</td>
-      <td className="dfu-tags">
-        {row.tags.length === 0 ? (
-          <span className="dfu-muted">—</span>
+      <td className="dfu-inv">
+        {draftUrl ? (
+          <a href={draftUrl} target="_blank" rel="noreferrer" className="dfu-inv-link">
+            {row.name}
+          </a>
         ) : (
-          row.tags.map((t) => (
-            <span key={t} className="tag-p">
-              {t}
-            </span>
-          ))
+          row.name
         )}
       </td>
+      <td className="dfu-amt">{formatMoney(row.total_price)}</td>
+      <td className="dfu-phone">{row.customer_phone ?? '(blank)'}</td>
+      <td className="dfu-date">{fmtDateTime(row.shopify_created_at)}</td>
       <td>
         <input
           type="checkbox"
@@ -278,6 +285,7 @@ function DraftRow({
           placeholder="Notes"
           type="text"
         />
+        {row._err && <div className="dfu-errmsg">{row._err}</div>}
       </td>
       <td>
         <input
@@ -286,11 +294,6 @@ function DraftRow({
           onChange={(e) => onChange(row.id, 'can_delete', e.target.checked)}
           title="Hide this draft from the follow-up view"
         />
-      </td>
-      <td className="dfu-id">
-        {row.id}
-        <div className="dfu-value">{formatMoney(row.total_price)}</div>
-        {row._err && <div className="dfu-errmsg">{row._err}</div>}
       </td>
     </tr>
   )

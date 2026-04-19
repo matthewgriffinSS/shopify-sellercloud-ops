@@ -31,6 +31,7 @@ export default async function RepDraftsPage({
   if (!VALID_REPS.has(rep)) notFound()
 
   const rows = await fetchDraftsForRep(rep)
+  const storeDomain = process.env.SHOPIFY_STORE_DOMAIN ?? null
   const title = rep === 'unassigned' ? 'Unassigned' : rep.charAt(0).toUpperCase() + rep.slice(1)
 
   return (
@@ -56,7 +57,7 @@ export default async function RepDraftsPage({
       <main className="container">
         <div className="card">
           <h3>Draft follow-up · {title}</h3>
-          <DraftFollowupTable rows={rows} />
+          <DraftFollowupTable rows={rows} storeDomain={storeDomain} />
         </div>
 
         <div className="footer">

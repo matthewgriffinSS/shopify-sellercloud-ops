@@ -972,3 +972,21 @@ tr.grand-total td {
   background: var(--accent);
   color: #fff;
 }
+
+/* ===== Invoice link + Amount column ===== */
+.dfu-inv-link {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+.dfu-inv-link:hover {
+  color: var(--accent2);
+  text-decoration: underline;
+}
+.dfu-amt {
+  color: var(--green);
+  font-weight: 600;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
