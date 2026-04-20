@@ -113,6 +113,54 @@ export default function HealthPage() {
     }
   }, [])
 
+  // --- Backfill customer names state ---
+  const [namesRunning, setNamesRunning] = useState(false)
+  const [namesResult, setNamesResult] = useState<any>(null)
+  const [namesError, setNamesError] = useState<string | null>(null)
+
+  const backfillCustomerNames = useCallback(async () => {
+    setNamesRunning(true)
+    setNamesResult(null)
+    setNamesError(null)
+    try {
+      const res = await fetch('/api/admin/backfill-customer-names', {
+        method: 'POST',
+        cache: 'no-store',
+      })
+      const data = await res.json()
+      if (!data.ok) setNamesError(data.error || 'Failed')
+      else setNamesResult(data)
+    } catch (err) {
+      setNamesError(err instanceof Error ? err.message : 'Failed')
+    } finally {
+      setNamesRunning(false)
+    }
+  }, [])
+
+  // --- Backfill Sellercloud IDs state ---
+  const [scRunning, setScRunning] = useState(false)
+  const [scResult, setScResult] = useState<any>(null)
+  const [scError, setScError] = useState<string | null>(null)
+
+  const backfillSellercloudIds = useCallback(async () => {
+    setScRunning(true)
+    setScResult(null)
+    setScError(null)
+    try {
+      const res = await fetch('/api/admin/backfill-sc-ids', {
+        method: 'POST',
+        cache: 'no-store',
+      })
+      const data = await res.json()
+      if (!data.ok) setScError(data.error || 'Failed')
+      else setScResult(data)
+    } catch (err) {
+      setScError(err instanceof Error ? err.message : 'Failed')
+    } finally {
+      setScRunning(false)
+    }
+  }, [])
+
   const check = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -202,11 +250,7 @@ export default function HealthPage() {
       {data && (
         <div style={{ display: 'grid', gap: 10 }}>
           {data.checks.map((c) => {
-            const meta = SERVICES[c.name] ?? {
-              label: c.name,
-              description: '',
-              fix: '',
-            }
+            const meta = SERVICES[c.name] ?? { label: c.name, description: '', fix: '' }
             return (
               <div
                 key={c.name}
@@ -227,22 +271,13 @@ export default function HealthPage() {
                   }}
                 >
                   <h2 style={{ fontSize: 15, fontWeight: 500, margin: 0 }}>{meta.label}</h2>
-                  <span
-                    className={c.ok ? 'bdg b-s' : 'bdg b-d'}
-                    style={{ flexShrink: 0 }}
-                  >
+                  <span className={c.ok ? 'bdg b-s' : 'bdg b-d'} style={{ flexShrink: 0 }}>
                     {c.ok ? '✓ ok' : '✗ failed'}
                     {c.latencyMs !== null && ` · ${c.latencyMs}ms`}
                   </span>
                 </div>
                 {meta.description && (
-                  <p
-                    style={{
-                      fontSize: 13,
-                      color: 'var(--text-2)',
-                      margin: '0 0 8px',
-                    }}
-                  >
+                  <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 8px' }}>
                     {meta.description}
                   </p>
                 )}
@@ -309,9 +344,7 @@ export default function HealthPage() {
               marginBottom: 6,
             }}
           >
-            <h3 style={{ fontSize: 14, fontWeight: 500, margin: 0 }}>
-              Late fulfillment scan
-            </h3>
+            <h3 style={{ fontSize: 14, fontWeight: 500, margin: 0 }}>Late fulfillment scan</h3>
             <span className="bdg b-n">Daily at 07:00 UTC</span>
           </div>
           <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 12px' }}>
@@ -368,12 +401,8 @@ export default function HealthPage() {
             events. Check which are currently registered, and click Register to auto-create any
             that are missing.
           </p>
-          <div style={{ display: 'flex', gap: 8, marginBottom: backfillResult ? 10 : 0 }}>
-            <button
-              className="btn-sm"
-              onClick={checkWebhooks}
-              disabled={webhookLoading}
-            >
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn-sm" onClick={checkWebhooks} disabled={webhookLoading}>
               {webhookLoading ? 'Checking…' : 'Check status'}
             </button>
             <button
@@ -431,19 +460,20 @@ export default function HealthPage() {
         </div>
       </section>
 
-      {/* ---------- Draft backfill ---------- */}
+      {/* ---------- Backfill data ---------- */}
       <section style={{ marginTop: 32 }}>
         <h2 style={{ fontSize: 16, fontWeight: 500, margin: '0 0 10px' }}>Backfill data</h2>
-        <div className="card" style={{ marginBottom: 0 }}>
+
+        {/* Drafts */}
+        <div className="card" style={{ marginBottom: 12 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 500, margin: '0 0 6px' }}>
+            Draft orders from Shopify
+          </h3>
           <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 12px' }}>
             Webhooks only fire for new events. Use this to pull all currently-open drafts from
             Shopify so they show on the dashboard immediately without waiting for the next update.
           </p>
-          <button
-            className="btn-sm"
-            onClick={backfillDrafts}
-            disabled={backfillRunning}
-          >
+          <button className="btn-sm" onClick={backfillDrafts} disabled={backfillRunning}>
             {backfillRunning ? 'Running…' : 'Backfill open drafts from Shopify'}
           </button>
           {backfillResult && (
@@ -477,6 +507,114 @@ export default function HealthPage() {
               }}
             >
               {backfillError}
+            </div>
+          )}
+        </div>
+
+        {/* Customer names */}
+        <div className="card" style={{ marginBottom: 12 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 500, margin: '0 0 6px' }}>
+            Customer names on orders
+          </h3>
+          <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 12px' }}>
+            Fills in missing customer names on existing orders by pulling them from the raw
+            Shopify payload we already stored. Use this if the Late Fulfillments or VIP Orders
+            tables are showing "—" in the Customer column. Only rewrites rows where the name is
+            currently NULL — won't overwrite anything good.
+          </p>
+          <button className="btn-sm" onClick={backfillCustomerNames} disabled={namesRunning}>
+            {namesRunning ? 'Running…' : 'Backfill customer names'}
+          </button>
+          {namesResult && (
+            <div
+              style={{
+                fontSize: 12,
+                padding: '8px 10px',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--success-bg)',
+                color: 'var(--success-text)',
+                fontFamily: 'var(--font-mono)',
+                marginTop: 10,
+              }}
+            >
+              Updated {namesResult.namesUpdated} names
+              {namesResult.emailsUpdated ? `, ${namesResult.emailsUpdated} emails` : ''}.{' '}
+              {namesResult.lateMissingBefore - namesResult.lateMissingAfter} late-fulfillment rows
+              now show a customer name ({namesResult.lateMissingAfter} still missing).
+            </div>
+          )}
+          {namesError && (
+            <div
+              style={{
+                fontSize: 12,
+                padding: '8px 10px',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--danger-bg)',
+                color: 'var(--danger-text)',
+                fontFamily: 'var(--font-mono)',
+                marginTop: 10,
+                wordBreak: 'break-word',
+              }}
+            >
+              {namesError}
+            </div>
+          )}
+        </div>
+
+        {/* Sellercloud IDs */}
+        <div className="card" style={{ marginBottom: 0 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 500, margin: '0 0 6px' }}>
+            Sellercloud order IDs
+          </h3>
+          <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 12px' }}>
+            Looks up the Sellercloud order ID for each late-fulfillment and VIP order that doesn't
+            have one yet, and stores it so the dashboard can link directly to the SC order detail
+            page. Processes up to 100 orders per run — if "remaining" is non-zero, just click again.
+          </p>
+          <button className="btn-sm" onClick={backfillSellercloudIds} disabled={scRunning}>
+            {scRunning ? 'Running…' : 'Backfill Sellercloud IDs'}
+          </button>
+          {scResult && (
+            <div
+              style={{
+                fontSize: 12,
+                padding: '8px 10px',
+                borderRadius: 'var(--radius-md)',
+                background: scResult.errors > 0 ? 'var(--danger-bg)' : 'var(--success-bg)',
+                color:
+                  scResult.errors > 0 ? 'var(--danger-text)' : 'var(--success-text)',
+                fontFamily: 'var(--font-mono)',
+                marginTop: 10,
+              }}
+            >
+              Checked {scResult.checked}: found {scResult.found}, not found {scResult.notFound},
+              errors {scResult.errors}. {scResult.remaining} remaining.
+              {scResult.errorDetails && scResult.errorDetails.length > 0 && (
+                <div style={{ marginTop: 8, fontSize: 11, opacity: 0.85 }}>
+                  First errors:
+                  {scResult.errorDetails.slice(0, 3).map((e: any, i: number) => (
+                    <div key={i}>
+                      • #{e.orderNumber}: {e.error}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {scError && (
+            <div
+              style={{
+                fontSize: 12,
+                padding: '8px 10px',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--danger-bg)',
+                color: 'var(--danger-text)',
+                fontFamily: 'var(--font-mono)',
+                marginTop: 10,
+                wordBreak: 'break-word',
+              }}
+            >
+              {scError}
             </div>
           )}
         </div>
