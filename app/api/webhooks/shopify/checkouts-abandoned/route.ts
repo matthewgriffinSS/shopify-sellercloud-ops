@@ -9,14 +9,14 @@ export const dynamic = 'force-dynamic'
 
 type Checkout = {
   id: number
-  token: string
-  email: string | null
+  token?: string
+  email?: string | null
   total_price: string
-  line_items: Array<{ id: number }>
+  line_items?: Array<{ id: number }>
   abandoned_checkout_url?: string
-  created_at: string
-  updated_at: string
-  customer: { first_name: string | null; last_name: string | null } | null
+  created_at?: string
+  updated_at?: string
+  customer?: { first_name: string | null; last_name: string | null } | null
 }
 
 /**
@@ -26,6 +26,11 @@ type Checkout = {
  * We only persist carts >=$2000 to keep the table focused.
  * Shopify fires checkouts/update when a checkout is abandoned
  * (and also on every step of the checkout flow — we dedupe via ON CONFLICT).
+ *
+ * IMPORTANT: every field interpolated into sql`...` must be non-undefined.
+ * postgres.js throws UNDEFINED_VALUE if any ${...} evaluates to undefined.
+ * Shopify payloads on early checkout events routinely omit email/token/etc,
+ * so coerce everything that could be missing to null explicitly.
  */
 export async function POST(req: NextRequest) {
   const raw = await req.text()
@@ -53,8 +58,18 @@ export async function POST(req: NextRequest) {
     return Response.json({ ok: true, skipped: true })
   }
 
+  // Null-coalesce every field postgres.js sees — undefined is rejected,
+  // but null is fine and matches our column nullability.
   const customerName =
-    [checkout.customer?.first_name, checkout.customer?.last_name].filter(Boolean).join(' ') || null
+    [checkout.customer?.first_name, checkout.customer?.last_name]
+      .filter(Boolean)
+      .join(' ') || null
+  const customerEmail = checkout.email ?? null
+  const token = checkout.token ?? null
+  const lineItemCount = checkout.line_items?.length ?? 0
+  // abandoned_at is NOT NULL in the schema, so fall back through a chain.
+  const abandonedAt =
+    checkout.updated_at ?? checkout.created_at ?? new Date().toISOString()
 
   try {
     await sql`
@@ -62,8 +77,8 @@ export async function POST(req: NextRequest) {
         id, token, customer_email, customer_name, total_price,
         line_item_count, abandoned_at, raw_payload
       ) VALUES (
-        ${checkout.id}, ${checkout.token}, ${checkout.email}, ${customerName},
-        ${total}, ${checkout.line_items?.length ?? 0}, ${checkout.updated_at},
+        ${checkout.id}, ${token}, ${customerEmail}, ${customerName},
+        ${total}, ${lineItemCount}, ${abandonedAt},
         ${sql.json(checkout)}
       )
       ON CONFLICT (id) DO UPDATE SET
