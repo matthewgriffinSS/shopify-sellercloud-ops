@@ -27,7 +27,7 @@ type DraftOrder = {
 
 /**
  * POST /api/admin/backfill-drafts
- * Pulls invoice_sent draft orders from Shopify (updated in the last 60 days)
+ * Pulls invoice_sent draft orders from Shopify (updated in the last 30 days)
  * and inserts them into our mirror, bypassing webhooks. Run once after setting
  * up to populate existing drafts, or whenever you suspect the webhook dropped
  * events.
@@ -42,18 +42,18 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // Paginate through invoice_sent drafts updated in the last 60 days.
+    // Paginate through invoice_sent drafts updated in the last 30 days.
     // Shopify REST lists are cursor-paginated via the Link header. With more
     // than 250 results a single page only returns the oldest 250, which is
     // why an unpaginated fetch was missing yesterday's drafts.
     //
     // Quirk: once you include page_info, you CANNOT include status/
     // updated_at_min (those are baked into the cursor). Only limit carries.
-    const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString()
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
     const initialQuery = new URLSearchParams({
       status: 'invoice_sent',
       limit: '250',
-      updated_at_min: sixtyDaysAgo,
+      updated_at_min: thirtyDaysAgo,
     })
 
     const draft_orders: DraftOrder[] = []
@@ -120,18 +120,18 @@ export async function POST(req: NextRequest) {
       SELECT COUNT(*)::text AS visible
       FROM shopify_draft_orders
       WHERE status = 'invoice_sent'
-        AND shopify_created_at > NOW() - INTERVAL '60 days'
+        AND shopify_created_at > NOW() - INTERVAL '30 days'
         AND service_type IS NULL
         AND can_delete = FALSE
     `
 
-    // Count how many invoice_sent drafts within 60 days now lack an assigned_rep.
+    // Count how many invoice_sent drafts within 30 days now lack an assigned_rep.
     // These won't appear in any rep's follow-up view.
     const [{ unassigned }] = await sql<{ unassigned: string }[]>`
       SELECT COUNT(*)::text AS unassigned
       FROM shopify_draft_orders
       WHERE status = 'invoice_sent'
-        AND shopify_created_at > NOW() - INTERVAL '60 days'
+        AND shopify_created_at > NOW() - INTERVAL '30 days'
         AND service_type IS NULL
         AND can_delete = FALSE
         AND assigned_rep IS NULL
@@ -159,7 +159,7 @@ export async function POST(req: NextRequest) {
       note: truncated
         ? `Hit the ${MAX_PAGES}-page safety cap (${MAX_PAGES * 250} drafts). There are more invoiced drafts in Shopify than we fetched this run. Rerun to pick up the rest.`
         : parseInt(visible) === 0
-          ? 'Backfill ran but nothing matches the dashboard filter (invoice_sent, last 60 days, no service tag, not flagged delete). Check dateRange above — if empty or all old, you likely have no recent invoiced drafts.'
+          ? 'Backfill ran but nothing matches the dashboard filter (invoice_sent, last 30 days, no service tag, not flagged delete). Check dateRange above — if empty or all old, you likely have no recent invoiced drafts.'
           : parseInt(unassigned) > 0
             ? `${visible} drafts visible on dashboard. ${unassigned} lack an assigned rep (missing rep name in tags) and won't appear in any rep's grid.`
             : `All ${visible} invoiced drafts have an assigned rep.`,
