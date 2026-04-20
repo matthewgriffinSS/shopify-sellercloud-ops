@@ -29,12 +29,6 @@ const SERVICES: Record<
 
 /**
  * fetch + JSON-parse with actually-useful error messages.
- *
- * Replaces the `const res = await fetch(...); const data = await res.json()`
- * pattern, which throws "JSON.parse: unexpected character at line 1 column 1"
- * whenever the server returns an HTML 404 page, auth redirect, or 500 error
- * page instead of JSON. Surfaces the real HTTP status and a snippet of the
- * response body.
  */
 async function fetchJson<T = any>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, { cache: 'no-store', ...init })
@@ -42,14 +36,12 @@ async function fetchJson<T = any>(url: string, init?: RequestInit): Promise<T> {
   const contentType = res.headers.get('content-type') || ''
 
   if (!res.ok) {
-    // Prefer a structured { error } from a JSON error body if we got one.
     if (contentType.includes('application/json')) {
       try {
         const parsed = JSON.parse(text)
         throw new Error(parsed.error || `HTTP ${res.status} at ${url}`)
       } catch (e) {
         if (e instanceof Error && e.message.startsWith('HTTP ')) throw e
-        // otherwise fall through to snippet handling
       }
     }
     const snippet = text.trim().slice(0, 200) || '(empty body)'
@@ -137,6 +129,26 @@ export default function HealthPage() {
       setBackfillError(err instanceof Error ? err.message : 'Failed')
     } finally {
       setBackfillRunning(false)
+    }
+  }, [])
+
+  // --- Backfill abandoned carts state ---
+  const [cartsRunning, setCartsRunning] = useState(false)
+  const [cartsResult, setCartsResult] = useState<any>(null)
+  const [cartsError, setCartsError] = useState<string | null>(null)
+
+  const backfillAbandonedCarts = useCallback(async () => {
+    setCartsRunning(true)
+    setCartsResult(null)
+    setCartsError(null)
+    try {
+      const data = await fetchJson('/api/admin/backfill-abandoned-carts', { method: 'POST' })
+      if (!data.ok) setCartsError(data.error || 'Failed')
+      else setCartsResult(data)
+    } catch (err) {
+      setCartsError(err instanceof Error ? err.message : 'Failed')
+    } finally {
+      setCartsRunning(false)
     }
   }, [])
 
@@ -529,6 +541,57 @@ export default function HealthPage() {
               }}
             >
               {backfillError}
+            </div>
+          )}
+        </div>
+
+        {/* Abandoned carts */}
+        <div className="card" style={{ marginBottom: 12 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 500, margin: '0 0 6px' }}>
+            High-value abandoned carts from Shopify
+          </h3>
+          <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 12px' }}>
+            Pulls abandoned checkouts from the last 7 days and stores any that are $2000+.
+            Use this after fixing a webhook issue or on first deploy to retroactively populate
+            carts that Shopify has but we don't. Safe to re-run — only inserts or refreshes
+            existing rows.
+          </p>
+          <button className="btn-sm" onClick={backfillAbandonedCarts} disabled={cartsRunning}>
+            {cartsRunning ? 'Running…' : 'Backfill abandoned carts from Shopify'}
+          </button>
+          {cartsResult && (
+            <div
+              style={{
+                fontSize: 12,
+                padding: '8px 10px',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--success-bg)',
+                color: 'var(--success-text)',
+                fontFamily: 'var(--font-mono)',
+                marginTop: 10,
+              }}
+            >
+              Fetched {cartsResult.fetched} carts, upserted {cartsResult.upserted} high-value.
+              {cartsResult.skippedLowValue > 0 &&
+                ` Skipped ${cartsResult.skippedLowValue} below $2000.`}
+              {typeof cartsResult.visibleOnDashboard === 'number' &&
+                ` ${cartsResult.visibleOnDashboard} now visible on /sales.`}
+            </div>
+          )}
+          {cartsError && (
+            <div
+              style={{
+                fontSize: 12,
+                padding: '8px 10px',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--danger-bg)',
+                color: 'var(--danger-text)',
+                fontFamily: 'var(--font-mono)',
+                marginTop: 10,
+                wordBreak: 'break-word',
+              }}
+            >
+              {cartsError}
             </div>
           )}
         </div>
