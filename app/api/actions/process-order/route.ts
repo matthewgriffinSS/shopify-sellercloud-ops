@@ -33,6 +33,12 @@ const ActionSchema = z.object({
  *   2. Records the action in processing_actions (this is what drives
  *      the "Processed" status on the dashboard)
  *   3. Returns ok/error to the client
+ *
+ * findScOrderByShopifyId now reads from shopify_orders.sellercloud_order_id
+ * as a cache. For orders where the daily cron has already populated the SC
+ * ID, this is a single DB read. For brand-new orders where the cron hasn't
+ * run yet, it falls back to walking up to MAX_LIVE_PAGES of SC orders — a
+ * few seconds worst case.
  */
 export async function POST(req: NextRequest) {
   const body = await req.json()
@@ -51,7 +57,7 @@ export async function POST(req: NextRequest) {
     if (input.resourceType === 'order') {
       const scOrder = await findScOrderByShopifyId(input.resourceId)
       if (!scOrder) {
-        scError = `No Sellercloud order found for Shopify ID ${input.resourceId}`
+        scError = `No Sellercloud order found for Shopify ID ${input.resourceId}. It may not have synced to SC yet — try again in a few minutes.`
       } else if (input.actionType === 'mark_fulfilled' && input.tracking) {
         await createShipment(scOrder.ID, {
           carrier: input.tracking.carrier,
