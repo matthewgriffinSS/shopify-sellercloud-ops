@@ -1,6 +1,6 @@
 import { fetchLateFulfillments, statusMapForResources } from '@/lib/queries'
 import { ActionDropdown } from './ActionForm'
-import { TagPill, daysAgo, formatMoney } from './shared'
+import { daysAgo, formatMoney } from './shared'
 
 export async function LateFulfillments() {
   const rows = await fetchLateFulfillments()
@@ -18,13 +18,12 @@ export async function LateFulfillments() {
         <table>
           <thead>
             <tr>
-              <th style={{ width: '10%' }}>Order</th>
-              <th style={{ width: '18%' }}>Customer</th>
-              <th style={{ width: '8%' }}>Late</th>
-              <th style={{ width: '10%' }}>Value</th>
-              <th style={{ width: '18%' }}>Support rep</th>
-              <th style={{ width: '18%' }}>Status</th>
-              <th style={{ width: '18%' }} className="r">
+              <th style={{ width: '12%' }}>Order</th>
+              <th style={{ width: '26%' }}>Customer</th>
+              <th style={{ width: '10%' }}>Late</th>
+              <th style={{ width: '12%' }}>Value</th>
+              <th style={{ width: '20%' }}>Status</th>
+              <th style={{ width: '20%' }} className="r">
                 Action
               </th>
             </tr>
@@ -44,9 +43,6 @@ export async function LateFulfillments() {
                   </td>
                   <td>{formatMoney(r.total_price)}</td>
                   <td>
-                    <TagPill rep={r.assigned_rep} service={r.service_type} tags={r.tags} />
-                  </td>
-                  <td>
                     {processed ? (
                       <span className="bdg b-s">
                         Processed {status?.actionType.replace(/_/g, ' ')}
@@ -63,11 +59,10 @@ export async function LateFulfillments() {
                       resourceId={r.id}
                       resourceLabel={`#${r.order_number} — ${r.customer_name ?? 'customer'} · ${formatMoney(r.total_price)}`}
                       actions={[
-                        { value: 'mark_fulfilled', label: 'Mark fulfilled + tracking' },
-                        { value: 'add_note', label: 'Add note to SC' },
+                        { value: 'mark_fulfilled', label: 'Mark fulfilled (with tracking)' },
+                        { value: 'add_note', label: 'Add note to Sellercloud' },
                         { value: 'escalate', label: 'Escalate to warehouse' },
                         { value: 'release_hold', label: 'Release hold' },
-                        { value: 'mark_processed', label: 'Mark processed' },
                       ]}
                     />
                   </td>
