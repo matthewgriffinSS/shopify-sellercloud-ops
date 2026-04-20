@@ -8,6 +8,8 @@ export async function VipOrders() {
     'order',
     rows.map((r) => r.id),
   )
+  const storeDomain = process.env.SHOPIFY_STORE_DOMAIN ?? null
+  const scAdminUrl = process.env.SELLERCLOUD_ADMIN_URL ?? null
 
   return (
     <div className="card">
@@ -18,10 +20,11 @@ export async function VipOrders() {
         <table>
           <thead>
             <tr>
-              <th style={{ width: '12%' }}>Order</th>
-              <th style={{ width: '32%' }}>Customer</th>
-              <th style={{ width: '14%' }}>Value</th>
-              <th style={{ width: '20%' }}>Status</th>
+              <th style={{ width: '11%' }}>Order</th>
+              <th style={{ width: '10%' }}>SC</th>
+              <th style={{ width: '26%' }}>Customer</th>
+              <th style={{ width: '13%' }}>Value</th>
+              <th style={{ width: '18%' }}>Status</th>
               <th style={{ width: '22%' }} className="r">
                 Action
               </th>
@@ -34,7 +37,34 @@ export async function VipOrders() {
                 status?.status === 'processed' || r.fulfillment_status === 'fulfilled'
               return (
                 <tr key={r.id} className={processed ? 'done' : ''}>
-                  <td>#{r.order_number}</td>
+                  <td>
+                    {storeDomain ? (
+                      <a
+                        href={`https://${storeDomain}/admin/orders/${r.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="dfu-inv-link"
+                      >
+                        #{r.order_number}
+                      </a>
+                    ) : (
+                      <>#{r.order_number}</>
+                    )}
+                  </td>
+                  <td>
+                    {r.sellercloud_order_id && scAdminUrl ? (
+                      <a
+                        href={`${scAdminUrl}/orders/order-details.aspx?id=${r.sellercloud_order_id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="dfu-inv-link"
+                      >
+                        SC-{r.sellercloud_order_id}
+                      </a>
+                    ) : (
+                      <span style={{ color: 'var(--text3)' }}>—</span>
+                    )}
+                  </td>
                   <td>
                     {r.customer_name ?? '—'} <span className="bdg b-i">VIP</span>
                   </td>
