@@ -52,10 +52,12 @@ export async function fetchLateFulfillments() {
       service_type: string | null
       shopify_created_at: Date
       tags: string[]
+      sellercloud_order_id: string | null
     }[]
   >`
     SELECT id::text, order_number, customer_name, total_price::text,
-           assigned_rep, service_type, shopify_created_at, tags
+           assigned_rep, service_type, shopify_created_at, tags,
+           sellercloud_order_id::text
     FROM shopify_orders
     WHERE (fulfillment_status IS NULL OR fulfillment_status != 'fulfilled')
       AND shopify_created_at < NOW() - INTERVAL '3 days'
@@ -76,10 +78,12 @@ export async function fetchVipOrders() {
       shopify_created_at: Date
       fulfillment_status: string | null
       tags: string[]
+      sellercloud_order_id: string | null
     }[]
   >`
     SELECT id::text, order_number, customer_name, total_price::text,
-           assigned_rep, service_type, shopify_created_at, fulfillment_status, tags
+           assigned_rep, service_type, shopify_created_at, fulfillment_status, tags,
+           sellercloud_order_id::text
     FROM shopify_orders
     WHERE is_vip = TRUE
       AND shopify_created_at > NOW() - INTERVAL '7 days'
