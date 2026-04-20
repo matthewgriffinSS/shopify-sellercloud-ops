@@ -3,33 +3,40 @@ import { sql } from '@/lib/db'
 import { fetchStaleUnfulfilledOrders } from '@/lib/shopify'
 import { parseTags, isVipOrder } from '@/lib/tags'
 import { verifyCookieValue } from '@/lib/auth'
+import { backfillScOrderIds, type BackfillResult } from '@/lib/sellercloud'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
 /**
- * Late-fulfillment scan.
+ * Daily sync job. Called two ways:
  *
- * Called two ways:
- *   1. Automatically by Vercel Cron once a day at 07:00 UTC (vercel.json)
- *      — Vercel sends Authorization: Bearer $CRON_SECRET
- *   2. Manually by a logged-in user via the "Run now" button on /health
- *      — forwards the user's dashboard auth cookie
+ *   1. Automatically by Vercel Cron once a day at 07:00 UTC (vercel.json).
+ *      Vercel sends Authorization: Bearer $CRON_SECRET.
+ *   2. Manually by a logged-in user via the "Run now" button on /health.
+ *      Uses the user's dashboard auth cookie.
  *
- * Finds Shopify orders unfulfilled >= 3 days and upserts them into the
- * local mirror so they appear on the dashboard's Late Fulfillments section.
+ * Does two things in sequence:
  *
- * Replaces: the "Late fulfillment" Shopify Flow's 3-day wait + condition + tag steps.
+ *   (a) Late-fulfillment scan: pull Shopify orders unfulfilled ≥ 3 days and
+ *       upsert into our mirror. Catches anything the orders/updated webhook
+ *       might have dropped. Replaces the old "Late fulfillment" Shopify Flow.
  *
- * Note: Hobby plan limits crons to once per day. If you need faster refresh,
- * upgrade to Pro (unlimited) or trigger manually from /health.
+ *   (b) SC ID backfill: for any orders visible on the support dashboard
+ *       that still lack a sellercloud_order_id, paginate SC orders and
+ *       match by EBaySellingManagerSalesRecordNumber. See
+ *       lib/sellercloud.ts::backfillScOrderIds for the matching logic.
+ *
+ * Hobby plan allows one cron per day. If you need faster SC link freshness,
+ * either click the /health button on demand or move to Pro for unlimited
+ * crons (then consider every 4–6 hours).
  */
 export async function GET(req: NextRequest) {
   const auth = req.headers.get('authorization')
   const isCron = auth === `Bearer ${process.env.CRON_SECRET}`
 
   if (!isCron) {
-    // Allow logged-in dashboard users to trigger manually.
     const cookieValue = req.cookies.get('dashboard_auth')?.value
     const isUser = process.env.DASHBOARD_PASSWORD && verifyCookieValue(cookieValue)
     if (!isUser) {
@@ -37,6 +44,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // -------- (a) Late-fulfillment reconciliation --------
   const { orders } = await fetchStaleUnfulfilledOrders(3)
   let upserted = 0
 
@@ -58,6 +66,8 @@ export async function GET(req: NextRequest) {
         ${tags.rep}, ${tags.service}, ${sql.json(order)}, ${order.created_at}
       )
       ON CONFLICT (id) DO UPDATE SET
+        customer_name = COALESCE(EXCLUDED.customer_name, shopify_orders.customer_name),
+        customer_email = COALESCE(EXCLUDED.customer_email, shopify_orders.customer_email),
         tags = EXCLUDED.tags,
         fulfillment_status = EXCLUDED.fulfillment_status,
         raw_payload = EXCLUDED.raw_payload,
@@ -66,5 +76,37 @@ export async function GET(req: NextRequest) {
     upserted += 1
   }
 
-  return Response.json({ ok: true, checked: orders.length, upserted, triggeredBy: isCron ? 'cron' : 'user' })
+  // -------- (b) SC ID backfill --------
+  // Wrapped in try/catch so a SC outage never fails the whole cron — the
+  // Shopify reconciliation above is the more important half.
+  let scResult: BackfillResult | null = null
+  let scError: string | null = null
+  try {
+    scResult = await backfillScOrderIds({ scope: 'dashboard' })
+  } catch (err) {
+    scError = err instanceof Error ? err.message : String(err)
+  }
+
+  return Response.json({
+    ok: true,
+    triggeredBy: isCron ? 'cron' : 'user',
+    shopifyScan: {
+      checked: orders.length,
+      upserted,
+    },
+    sellercloudBackfill: scResult
+      ? {
+          candidatesBefore: scResult.candidatesBefore,
+          matched: scResult.matched,
+          remaining: scResult.candidatesRemaining,
+          pagesScanned: scResult.pagesScanned,
+          stoppedReason: scResult.stoppedReason,
+        }
+      : { error: scError },
+    // Backward-compat: the /health UI reads `checked` and `upserted` at the
+    // top level. Preserve that so the existing button keeps showing sensible
+    // results without a UI redeploy.
+    checked: orders.length,
+    upserted,
+  })
 }
