@@ -88,6 +88,14 @@ export async function fetchVipOrders() {
   `
 }
 
+/**
+ * Per-rep summary tiles for the /sales page.
+ *
+ * Sibling-conversion filter: if another draft with the same customer
+ * (matched by email or normalized phone) has converted in the last 30 days,
+ * this draft is hidden. That way if we send a customer 3 quotes and they
+ * pay one, the other 2 disappear automatically.
+ */
 export async function fetchDraftsByRep() {
   return sql<
     { assigned_rep: string; count: string; total_value: string; stale_count: string }[]
@@ -97,13 +105,30 @@ export async function fetchDraftsByRep() {
       COUNT(*)::text AS count,
       COALESCE(SUM(total_price), 0)::text AS total_value,
       COUNT(*) FILTER (WHERE shopify_created_at < NOW() - INTERVAL '7 days')::text AS stale_count
-    FROM shopify_draft_orders
+    FROM shopify_draft_orders d
     WHERE status = 'invoice_sent'
-      AND shopify_created_at > NOW() - INTERVAL '60 days'
+      AND shopify_created_at > NOW() - INTERVAL '30 days'
       AND service_type IS NULL
       AND can_delete = FALSE
       AND converted_order_id IS NULL
       AND converted_at IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM shopify_draft_orders sib
+        WHERE sib.id != d.id
+          AND sib.converted_at IS NOT NULL
+          AND sib.converted_at > NOW() - INTERVAL '30 days'
+          AND (
+            (sib.customer_email IS NOT NULL
+             AND d.customer_email IS NOT NULL
+             AND LOWER(sib.customer_email) = LOWER(d.customer_email))
+            OR
+            (sib.customer_phone IS NOT NULL
+             AND d.customer_phone IS NOT NULL
+             AND LENGTH(regexp_replace(sib.customer_phone, '\D', '', 'g')) >= 10
+             AND RIGHT(regexp_replace(sib.customer_phone, '\D', '', 'g'), 10) =
+                 RIGHT(regexp_replace(d.customer_phone, '\D', '', 'g'), 10))
+          )
+      )
     GROUP BY COALESCE(assigned_rep, 'unassigned')
     ORDER BY SUM(total_price) DESC
   `
@@ -135,13 +160,20 @@ export type DraftFollowupRow = {
 }
 
 /**
- * Full detail for a rep's drafts page. Excludes:
+ * Full detail for a rep's drafts page.
+ *
+ * Excludes:
  *  - service-tagged drafts (sdss/install/rebuild/shock service)
  *  - rows closed out by the rep (can_delete = true)
  *  - drafts that have converted to a real order (converted_order_id set,
  *    either by Shopify itself or by a rep marking it closed)
+ *  - drafts belonging to a customer who has ANY other draft that converted
+ *    in the last 30 days (matched by email or normalized phone)
  *
  * Pass 'unassigned' to get drafts with no assigned_rep.
+ *
+ * Sorted oldest-first so the drafts closest to the 30-day cutoff sit at
+ * the top of the list and get chased first.
  */
 export async function fetchDraftsForRep(rep: string): Promise<DraftFollowupRow[]> {
   const repFilter = rep === 'unassigned' ? null : rep
@@ -169,9 +201,9 @@ export async function fetchDraftsForRep(rep: string): Promise<DraftFollowupRow[]
       rep_notes,
       can_delete,
       shopify_created_at
-    FROM shopify_draft_orders
+    FROM shopify_draft_orders d
     WHERE status = 'invoice_sent'
-      AND shopify_created_at > NOW() - INTERVAL '60 days'
+      AND shopify_created_at > NOW() - INTERVAL '30 days'
       AND service_type IS NULL
       AND can_delete = FALSE
       AND converted_order_id IS NULL
@@ -179,6 +211,23 @@ export async function fetchDraftsForRep(rep: string): Promise<DraftFollowupRow[]
       AND (
         (${repFilter}::text IS NULL AND assigned_rep IS NULL)
         OR assigned_rep = ${repFilter}
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM shopify_draft_orders sib
+        WHERE sib.id != d.id
+          AND sib.converted_at IS NOT NULL
+          AND sib.converted_at > NOW() - INTERVAL '30 days'
+          AND (
+            (sib.customer_email IS NOT NULL
+             AND d.customer_email IS NOT NULL
+             AND LOWER(sib.customer_email) = LOWER(d.customer_email))
+            OR
+            (sib.customer_phone IS NOT NULL
+             AND d.customer_phone IS NOT NULL
+             AND LENGTH(regexp_replace(sib.customer_phone, '\D', '', 'g')) >= 10
+             AND RIGHT(regexp_replace(sib.customer_phone, '\D', '', 'g'), 10) =
+                 RIGHT(regexp_replace(d.customer_phone, '\D', '', 'g'), 10))
+          )
       )
     ORDER BY shopify_created_at ASC
     LIMIT 500
