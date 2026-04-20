@@ -27,6 +27,44 @@ const SERVICES: Record<
   },
 }
 
+/**
+ * fetch + JSON-parse with actually-useful error messages.
+ *
+ * Replaces the `const res = await fetch(...); const data = await res.json()`
+ * pattern, which throws "JSON.parse: unexpected character at line 1 column 1"
+ * whenever the server returns an HTML 404 page, auth redirect, or 500 error
+ * page instead of JSON. Surfaces the real HTTP status and a snippet of the
+ * response body.
+ */
+async function fetchJson<T = any>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, { cache: 'no-store', ...init })
+  const text = await res.text()
+  const contentType = res.headers.get('content-type') || ''
+
+  if (!res.ok) {
+    // Prefer a structured { error } from a JSON error body if we got one.
+    if (contentType.includes('application/json')) {
+      try {
+        const parsed = JSON.parse(text)
+        throw new Error(parsed.error || `HTTP ${res.status} at ${url}`)
+      } catch (e) {
+        if (e instanceof Error && e.message.startsWith('HTTP ')) throw e
+        // otherwise fall through to snippet handling
+      }
+    }
+    const snippet = text.trim().slice(0, 200) || '(empty body)'
+    throw new Error(`HTTP ${res.status} at ${url} — ${snippet}`)
+  }
+
+  if (!text) throw new Error(`Empty response from ${url}`)
+
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    throw new Error(`Non-JSON response from ${url}: ${text.trim().slice(0, 200)}`)
+  }
+}
+
 export default function HealthPage() {
   const [data, setData] = useState<HealthResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -41,12 +79,7 @@ export default function HealthPage() {
     setJobResult(null)
     setJobError(null)
     try {
-      const res = await fetch('/api/cron/check-late-fulfillments', { cache: 'no-store' })
-      if (!res.ok) {
-        setJobError(`Failed: ${res.status} ${await res.text()}`)
-        return
-      }
-      setJobResult(await res.json())
+      setJobResult(await fetchJson('/api/cron/check-late-fulfillments'))
     } catch (err) {
       setJobError(err instanceof Error ? err.message : 'Failed to run')
     } finally {
@@ -63,8 +96,7 @@ export default function HealthPage() {
     setWebhookLoading(true)
     setWebhookError(null)
     try {
-      const res = await fetch('/api/admin/webhooks', { cache: 'no-store' })
-      const data = await res.json()
+      const data = await fetchJson('/api/admin/webhooks')
       if (!data.ok) setWebhookError(data.error || 'Failed')
       else setWebhookStatus(data)
     } catch (err) {
@@ -78,8 +110,7 @@ export default function HealthPage() {
     setWebhookLoading(true)
     setWebhookError(null)
     try {
-      const res = await fetch('/api/admin/webhooks', { method: 'POST', cache: 'no-store' })
-      const data = await res.json()
+      const data = await fetchJson('/api/admin/webhooks', { method: 'POST' })
       if (!data.ok) setWebhookError(data.error || 'Failed')
       await checkWebhooks() // refresh status
     } catch (err) {
@@ -99,11 +130,7 @@ export default function HealthPage() {
     setBackfillResult(null)
     setBackfillError(null)
     try {
-      const res = await fetch('/api/admin/backfill-drafts', {
-        method: 'POST',
-        cache: 'no-store',
-      })
-      const data = await res.json()
+      const data = await fetchJson('/api/admin/backfill-drafts', { method: 'POST' })
       if (!data.ok) setBackfillError(data.error || 'Failed')
       else setBackfillResult(data)
     } catch (err) {
@@ -123,11 +150,7 @@ export default function HealthPage() {
     setNamesResult(null)
     setNamesError(null)
     try {
-      const res = await fetch('/api/admin/backfill-customer-names', {
-        method: 'POST',
-        cache: 'no-store',
-      })
-      const data = await res.json()
+      const data = await fetchJson('/api/admin/backfill-customer-names', { method: 'POST' })
       if (!data.ok) setNamesError(data.error || 'Failed')
       else setNamesResult(data)
     } catch (err) {
@@ -147,11 +170,7 @@ export default function HealthPage() {
     setScResult(null)
     setScError(null)
     try {
-      const res = await fetch('/api/admin/backfill-sc-ids', {
-        method: 'POST',
-        cache: 'no-store',
-      })
-      const data = await res.json()
+      const data = await fetchJson('/api/admin/backfill-sc-ids', { method: 'POST' })
       if (!data.ok) setScError(data.error || 'Failed')
       else setScResult(data)
     } catch (err) {
@@ -169,12 +188,15 @@ export default function HealthPage() {
       if (res.status === 401) {
         setError('Not authenticated. Sign in to the dashboard first.')
         setData(null)
-        setLoading(false)
         return
       }
-      const json = (await res.json()) as HealthResponse
-      setData(json)
-      setLastCheckedAt(new Date())
+      const text = await res.text()
+      try {
+        setData(JSON.parse(text) as HealthResponse)
+        setLastCheckedAt(new Date())
+      } catch {
+        setError(`Non-JSON response (HTTP ${res.status}): ${text.slice(0, 200)}`)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to run health check')
     } finally {
