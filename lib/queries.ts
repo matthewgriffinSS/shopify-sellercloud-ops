@@ -180,7 +180,7 @@ export async function fetchDraftsForRep(rep: string): Promise<DraftFollowupRow[]
         (${repFilter}::text IS NULL AND assigned_rep IS NULL)
         OR assigned_rep = ${repFilter}
       )
-    ORDER BY shopify_created_at DESC
+    ORDER BY shopify_created_at ASC
     LIMIT 500
   `
 }
