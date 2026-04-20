@@ -33,7 +33,7 @@ async function run(req: NextRequest) {
   const scope = url.searchParams.get('scope') === 'all_recent' ? 'all_recent' : 'dashboard'
 
   const started = Date.now()
-  const result = await backfillScOrderIds({ scope })
+  const result = await backfillScOrderIds({ scope, maxPages: 15 })
   const elapsedMs = Date.now() - started
 
   return Response.json({
