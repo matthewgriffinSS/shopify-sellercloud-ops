@@ -1,6 +1,6 @@
 import { fetchVipOrders, statusMapForResources } from '@/lib/queries'
 import { ActionDropdown } from './ActionForm'
-import { TagPill, formatMoney } from './shared'
+import { formatMoney } from './shared'
 
 export async function VipOrders() {
   const rows = await fetchVipOrders()
@@ -18,12 +18,11 @@ export async function VipOrders() {
         <table>
           <thead>
             <tr>
-              <th style={{ width: '10%' }}>Order</th>
-              <th style={{ width: '26%' }}>Customer</th>
-              <th style={{ width: '11%' }}>Value</th>
-              <th style={{ width: '18%' }}>Support rep</th>
-              <th style={{ width: '17%' }}>Status</th>
-              <th style={{ width: '18%' }} className="r">
+              <th style={{ width: '12%' }}>Order</th>
+              <th style={{ width: '32%' }}>Customer</th>
+              <th style={{ width: '14%' }}>Value</th>
+              <th style={{ width: '20%' }}>Status</th>
+              <th style={{ width: '22%' }} className="r">
                 Action
               </th>
             </tr>
@@ -40,9 +39,6 @@ export async function VipOrders() {
                     {r.customer_name ?? '—'} <span className="bdg b-i">VIP</span>
                   </td>
                   <td>{formatMoney(r.total_price)}</td>
-                  <td>
-                    <TagPill rep={r.assigned_rep} service={r.service_type} tags={r.tags} />
-                  </td>
                   <td>
                     {processed ? (
                       <span className="bdg b-s">Processed</span>
