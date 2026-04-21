@@ -1,0 +1,27 @@
+name: Backfill Sellercloud IDs
+
+# Every 2 hours at :45 past. Staggered from the other two crons (:15) so
+# they don't all hammer Vercel at the same minute.
+on:
+  schedule:
+    - cron: '45 */2 * * *'
+  workflow_dispatch:
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Hit /api/cron/backfill-sc-ids
+        run: |
+          # --max-time 80 ensures we don't sit here forever if Vercel's 60s
+          # function timeout somehow fails to trigger. -L follows 308s.
+          response=$(curl -sSL --max-time 80 -w "\nHTTP_STATUS:%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.APP_URL }}/api/cron/backfill-sc-ids")
+          echo "$response"
+          status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTP_STATUS://')
+          if [ "$status" -ne 200 ]; then
+            echo "Cron returned HTTP $status — failing the job so GitHub notifies."
+            exit 1
+          fi
