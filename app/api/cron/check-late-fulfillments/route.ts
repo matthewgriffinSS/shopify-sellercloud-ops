@@ -82,7 +82,7 @@ export async function GET(req: NextRequest) {
   let scResult: BackfillResult | null = null
   let scError: string | null = null
   try {
-    scResult = await backfillScOrderIds({ scope: 'dashboard' })
+    scResult = await backfillScOrderIds({ scope: 'dashboard', maxPages: 15 })
   } catch (err) {
     scError = err instanceof Error ? err.message : String(err)
   }
