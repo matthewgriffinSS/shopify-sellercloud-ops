@@ -1196,3 +1196,109 @@ tr.row-form > td {
   font-style: italic;
   word-break: break-word;
 }
+/* ====================================================================
+   APPEND these rules to your existing app/globals.css.
+   (They're additive. Cart-specific classes don't collide with the
+   .row-* classes added in the previous UX pass.)
+   ==================================================================== */
+
+/* ===== Cart note display (parallel to .row-note for tables) ===== */
+
+.cart-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg3);
+  border-left: 2px solid var(--accent);
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin: 0 0 10px;
+  line-height: 1.4;
+}
+
+.cart-note-ic {
+  flex-shrink: 0;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.cart-note-text {
+  color: var(--text2);
+  font-style: italic;
+  font-weight: 500;
+  word-break: break-word;
+}
+
+.cart-status {
+  margin: 0 0 10px;
+}
+
+/* When a cart is open (note form expanded inside), highlight it so it
+   doesn't get lost in the grid. */
+
+.cart-c-open {
+  border-color: var(--accent);
+  background: var(--bg2);
+  box-shadow: 0 4px 18px rgba(232, 93, 36, 0.12);
+}
+
+/* ===== Cart inline note form ===== */
+
+.cart-form {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+}
+
+.cart-form-label {
+  font-size: 10px;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.cart-form-label strong {
+  color: var(--text);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 11px;
+}
+
+.cart-form-textarea {
+  width: 100%;
+  padding: 9px 11px;
+  font-size: 12px;
+  font-family: var(--font-body);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg2);
+  color: var(--text);
+  resize: vertical;
+  min-height: 56px;
+  margin-bottom: 10px;
+  line-height: 1.45;
+}
+
+.cart-form-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.cart-form-textarea::placeholder {
+  color: var(--text3);
+}
+
+.cart-form-buttons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
