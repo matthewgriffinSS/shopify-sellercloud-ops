@@ -42,6 +42,44 @@ export async function statusMapForResources(
 }
 
 /**
+ * Most-recent note text for each resource. Returns a plain object keyed by
+ * resource_id so it can be serialized over the server→client boundary.
+ *
+ * "Note" here means the most recent processing_actions row of action_type
+ * 'add_note' that has a non-empty note in its payload. Used by OrdersTable
+ * to display the latest note inline in the Status column instead of a
+ * generic "In progress" badge.
+ */
+export async function recentNotesForResources(
+  resourceType: 'order' | 'draft_order' | 'abandoned_checkout',
+  resourceIds: string[],
+): Promise<Record<string, string | null>> {
+  const out: Record<string, string | null> = {}
+  for (const id of resourceIds) out[id] = null
+  if (resourceIds.length === 0) return out
+
+  // DISTINCT ON returns the most recent add_note action per resource.
+  // payload->>'note' extracts the text out of the JSONB.
+  const rows = await sql<
+    { resource_id: string; note: string | null }[]
+  >`
+    SELECT DISTINCT ON (resource_id) resource_id, payload->>'note' AS note
+    FROM processing_actions
+    WHERE resource_type = ${resourceType}
+      AND resource_id = ANY(${resourceIds})
+      AND action_type = 'add_note'
+      AND payload->>'note' IS NOT NULL
+      AND payload->>'note' != ''
+    ORDER BY resource_id, created_at DESC
+  `
+
+  for (const row of rows) {
+    out[row.resource_id] = row.note
+  }
+  return out
+}
+
+/**
  * Late fulfillments list. Excludes orders that have already been handled
  * (processing_actions has a terminal action like mark_processed or
  * mark_fulfilled for them). That means clicking "Mark handled" on an order
@@ -191,19 +229,6 @@ export type DraftFollowupRow = {
 
 /**
  * Full detail for a rep's drafts page.
- *
- * Excludes:
- *  - service-tagged drafts (sdss/install/rebuild/shock service)
- *  - rows closed out by the rep (can_delete = true)
- *  - drafts that have converted to a real order (converted_order_id set,
- *    either by Shopify itself or by a rep marking it closed)
- *  - drafts belonging to a customer who has ANY other draft that converted
- *    in the last 30 days (matched by email or normalized phone)
- *
- * Pass 'unassigned' to get drafts with no assigned_rep.
- *
- * Sorted oldest-first so the drafts closest to the 30-day cutoff sit at
- * the top of the list and get chased first.
  */
 export async function fetchDraftsForRep(rep: string): Promise<DraftFollowupRow[]> {
   const repFilter = rep === 'unassigned' ? null : rep

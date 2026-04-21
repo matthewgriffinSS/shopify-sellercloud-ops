@@ -28,17 +28,19 @@ const ActionSchema = z.object({
 })
 
 /**
- * Called by the dashboard's action form. Does three things:
- *   1. Posts the note / shipment / status change to Sellercloud
- *   2. Records the action in processing_actions (this is what drives
- *      the "Processed" status on the dashboard)
- *   3. Returns ok/error to the client
+ * Called by the dashboard's action form / row buttons. Does three things:
+ *   1. (Best-effort) posts the note / shipment to Sellercloud IF the order
+ *      has a SC link cached. Missing SC link is NOT an error — most orders
+ *      don't have one and that's fine; the action is logged locally.
+ *   2. Records the action in processing_actions (this is what drives the
+ *      "Processed" status on the dashboard, and the inline note display).
+ *   3. Returns ok/scError.
  *
- * findScOrderByShopifyId now reads from shopify_orders.sellercloud_order_id
- * as a cache. For orders where the daily cron has already populated the SC
- * ID, this is a single DB read. For brand-new orders where the cron hasn't
- * run yet, it falls back to walking up to MAX_LIVE_PAGES of SC orders — a
- * few seconds worst case.
+ * scError is now only set when an SC call was actually attempted and failed,
+ * not when SC simply doesn't have the order. That way, hitting "Save note"
+ * on a freshly-imported order without an SC link no longer surfaces a
+ * confusing "No Sellercloud order found" error to the rep — it just saves
+ * the note locally and returns ok.
  */
 export async function POST(req: NextRequest) {
   const body = await req.json()
@@ -52,23 +54,23 @@ export async function POST(req: NextRequest) {
   let scError: string | null = null
 
   try {
-    // Orders have a SC counterpart we can post to. Draft orders and
-    // abandoned checkouts do not yet — those actions are log-only.
     if (input.resourceType === 'order') {
       const scOrder = await findScOrderByShopifyId(input.resourceId)
-      if (!scOrder) {
-        scError = `No Sellercloud order found for Shopify ID ${input.resourceId}. It may not have synced to SC yet — try again in a few minutes.`
-      } else if (input.actionType === 'mark_fulfilled' && input.tracking) {
-        await createShipment(scOrder.ID, {
-          carrier: input.tracking.carrier,
-          tracking: input.tracking.number,
-          note: input.note,
-        })
-        scNoteId = `shipment-${scOrder.ID}`
-      } else if (input.note) {
-        await addOrderNote(scOrder.ID, input.note)
-        scNoteId = `note-${scOrder.ID}`
+      if (scOrder) {
+        // Only attempt SC operations if we have a link.
+        if (input.actionType === 'mark_fulfilled' && input.tracking) {
+          await createShipment(scOrder.ID, {
+            carrier: input.tracking.carrier,
+            tracking: input.tracking.number,
+            note: input.note,
+          })
+          scNoteId = `shipment-${scOrder.ID}`
+        } else if (input.note) {
+          await addOrderNote(scOrder.ID, input.note)
+          scNoteId = `note-${scOrder.ID}`
+        }
       }
+      // No SC link = no SC operation = no error. Local logging happens regardless.
     }
   } catch (err) {
     scError = err instanceof Error ? err.message : String(err)
