@@ -4,26 +4,29 @@
 // Token is valid for 60 minutes per Sellercloud docs. We cache for 50 minutes
 // with a safety margin and use inflight deduplication for cold-start races.
 //
-// All request paths below use the /rest/api/... prefix documented in Sellercloud's
-// Swagger. Visit https://autososs.api.sellercloud.us/rest/swagger/ui/ to browse them.
+// IMPORTANT DESIGN NOTE re: Shopify → SC order matching.
 //
-// Design note re: Shopify order ID → SC order ID lookup:
+// We confirmed experimentally (by inspecting a wrongly-matched order) that
+// Autososs's /api/Orders endpoint IGNORES filter parameters — passing
+// `model.OrderSourceOrderID=311870` returns the newest 5 orders regardless,
+// the same way no filter would. If we trust SC's response and take items[0]
+// as "the match," we'll silently link every Shopify order to whatever the
+// newest SC order happens to be at lookup time. That's exactly the bug we
+// saw: Shopify #311870 linked to SC-5057725, which was actually for order
+// #311567 belonging to a different customer.
 //
-// We confirmed experimentally that SC's GET /api/Orders list endpoint IGNORES
-// every documented filter parameter (model.channelOrderID / customerOrderID /
-// orderSourceOrderID, any casing). It just returns the newest N orders
-// regardless. So we can't filter server-side for the bulk backfill.
+// So every match must VERIFY. We read all plausible Shopify-identifier fields
+// on each returned SC item and only accept a match when one actually equals
+// the Shopify value we asked for. When Autososs ignores our filter, the
+// response contains unrelated orders and verification correctly fails → null.
 //
-// Instead, we paginate the unfiltered list (which does include the Shopify
-// identifier inline per item under `EBaySellingManagerSalesRecordNumber`)
-// and match client-side against our shopify_orders table. Results are
-// cached in shopify_orders.sellercloud_order_id so subsequent lookups for
-// the same order are a single DB read.
+// Known Shopify-identifier fields on SC orders (from observation on Autososs):
+//   OrderSourceOrderID                  — Shopify order_number (e.g. "311567")
+//   ChannelOrderID / ChannelOrderID2    — sometimes holds the numeric Shopify id
+//   EBaySellingManagerSalesRecordNumber — despite the name, sometimes holds the numeric Shopify id
+//   CompletedOrderID                    — sometimes holds the Shopify name (e.g. "SS311567")
 //
-// There's ALSO a targeted path (findScOrderByAnyShopifyId / backfillScOrderIdsTargeted)
-// that calls SC per-order with filter params. It tries three field names per
-// candidate. If your SC instance silently ignores the filters like Autososs
-// does, you'll get 0 matches and can fall back to the pagination path.
+// We check all of them on every item. First verified match wins.
 
 import { sql } from './db'
 
@@ -89,7 +92,6 @@ async function scRequest<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     throw new Error(`Sellercloud ${path}: ${res.status} ${await res.text()}`)
   }
-  // Some Sellercloud endpoints return 200 with empty body on success.
   const text = await res.text()
   if (!text) return undefined as unknown as T
   return JSON.parse(text) as T
@@ -98,17 +100,25 @@ async function scRequest<T>(path: string, init?: RequestInit): Promise<T> {
 // -------------- Order list pagination --------------
 
 /**
- * One page of SC orders. We only pull fields we actually use — SC returns
- * ~71 fields per item by default and we don't care about most of them, but
- * there's no server-side projection so we just drop them on the ground here.
+ * Minimal SC order shape we actually read. SC returns ~71 fields per item;
+ * we list the Shopify-identifier fields we check during matching and
+ * TimeOfOrder for the pagination stop-condition.
+ *
+ * ChannelOrderID and related fields are declared optional+loose because SC
+ * documentation is spotty about which are always present.
  */
 export type ScListOrder = {
   ID: number
-  EBaySellingManagerSalesRecordNumber: string | null // Shopify numeric order ID as string
-  OrderSourceOrderID: string | null // Shopify order number ("311729")
-  CompletedOrderID?: string | null // Shopify name ("SS311729")
-  TimeOfOrder: string // ISO date, when Shopify placed the order
-  CreatedOn: string // ISO date, when SC received it
+  TimeOfOrder: string
+  CreatedOn: string
+  OrderSourceOrderID: string | null
+  EBaySellingManagerSalesRecordNumber?: string | null
+  CompletedOrderID?: string | null
+  ChannelOrderID?: string | null
+  ChannelOrderID2?: string | null
+  SecondaryOrderSourceOrderID?: string | null
+  // Anything else SC returns is ignored — we pass through via JSON and index on the above.
+  [key: string]: unknown
 }
 
 type ScListResponse = {
@@ -117,7 +127,7 @@ type ScListResponse = {
 
 /**
  * Fetch one page of SC orders, newest first (SC default sort).
- * pageSize capped at 250 per SC's documented limit.
+ * pageSize capped at 250.
  */
 export async function listScOrders(page: number, pageSize = 250): Promise<ScListOrder[]> {
   const params = new URLSearchParams({
@@ -128,251 +138,152 @@ export async function listScOrders(page: number, pageSize = 250): Promise<ScList
   return data.Items ?? []
 }
 
-// -------------- Order lookup (cached) --------------
+// -------------- Verification: does a SC item actually match a Shopify order? --------------
 
 /**
- * Resolve a Shopify order ID to its SC counterpart.
- *
- * Fast path: read the cached mapping from shopify_orders.sellercloud_order_id.
- *
- * Slow path: paginate up to MAX_LIVE_PAGES (= a few thousand orders, enough
- * to cover the last several days of SC activity) looking for an order whose
- * EBaySellingManagerSalesRecordNumber matches the Shopify numeric ID.
- * Caches the result on the shopify_orders row so subsequent calls are fast.
- *
- * Returns { ID } so existing callers that use `scOrder.ID` keep working.
+ * Read every plausible Shopify-identifier field off a SC order and return
+ * the set of values it contains. Used for verification — we match iff one
+ * of these equals a value we recognize.
  */
-const MAX_LIVE_PAGES = 10 // ~2500 recent SC orders; covers days to weeks
-
-export async function findScOrderByShopifyId(
-  shopifyIdentifier: string | number,
-): Promise<{ ID: number } | null> {
-  const shopifyId = String(shopifyIdentifier)
-
-  // Fast path: DB cache.
-  const cached = await sql<{ sellercloud_order_id: string | null }[]>`
-    SELECT sellercloud_order_id::text FROM shopify_orders
-    WHERE id = ${shopifyId}::bigint
-    LIMIT 1
-  `
-  if (cached[0]?.sellercloud_order_id) {
-    return { ID: parseInt(cached[0].sellercloud_order_id) }
+function scItemShopifyIdentifiers(item: ScListOrder): Set<string> {
+  const out = new Set<string>()
+  const candidates = [
+    item.OrderSourceOrderID,
+    item.EBaySellingManagerSalesRecordNumber,
+    item.CompletedOrderID,
+    item.ChannelOrderID,
+    item.ChannelOrderID2,
+    item.SecondaryOrderSourceOrderID,
+  ]
+  for (const v of candidates) {
+    if (typeof v === 'string' && v.length > 0) out.add(v)
   }
-
-  // Slow path: paginate, match, cache.
-  for (let page = 1; page <= MAX_LIVE_PAGES; page++) {
-    const items = await listScOrders(page, 250)
-    if (items.length === 0) break
-
-    const match = items.find((i) => i.EBaySellingManagerSalesRecordNumber === shopifyId)
-    if (match) {
-      await sql`
-        UPDATE shopify_orders
-        SET sellercloud_order_id = ${match.ID}, updated_at = NOW()
-        WHERE id = ${shopifyId}::bigint
-      `
-      return { ID: match.ID }
-    }
-  }
-
-  return null
-}
-
-// -------------- Bulk SC ID backfill (pagination walk) --------------
-
-export type BackfillResult = {
-  candidatesBefore: number
-  pagesScanned: number
-  matched: number
-  candidatesRemaining: number
-  stoppedReason: 'all_found' | 'page_cap' | 'walked_past_oldest' | 'empty_page'
+  return out
 }
 
 /**
- * Walk SC orders newest-first, matching each against our shopify_orders
- * candidates and populating sellercloud_order_id. Runs safely to completion
- * or until we've walked past our oldest candidate's date.
- *
- * Used from:
- *   - /api/cron/check-late-fulfillments (daily, after the stale scan)
- *
- * `scope` defaults to dashboard-visible orders only (late + VIP).
+ * Does this SC item match a Shopify order with these identifiers?
+ * Matches if any of the item's Shopify-identifier fields equals any of
+ * the Shopify identifiers we're looking for. Prefix-stripped comparison
+ * handles "SS311567" vs "311567".
  */
-export async function backfillScOrderIds(options: {
-  scope?: 'dashboard' | 'all_recent'
-  maxPages?: number
-} = {}): Promise<BackfillResult> {
-  const scope = options.scope ?? 'dashboard'
-  const maxPages = options.maxPages ?? 40 // 40 × 250 = 10,000 SC orders, several weeks worth
-
-  // Candidates: orders missing a SC ID that we actually care about.
-  const candidates =
-    scope === 'dashboard'
-      ? await sql<{ id: string; shopify_created_at: Date }[]>`
-          SELECT id::text, shopify_created_at
-          FROM shopify_orders
-          WHERE sellercloud_order_id IS NULL
-            AND (
-              -- late fulfillments
-              ((fulfillment_status IS NULL OR fulfillment_status != 'fulfilled')
-               AND shopify_created_at < NOW() - INTERVAL '3 days'
-               AND shopify_created_at > NOW() - INTERVAL '90 days')
-              OR
-              -- VIP this week
-              (is_vip = TRUE AND shopify_created_at > NOW() - INTERVAL '7 days')
-            )
-        `
-      : await sql<{ id: string; shopify_created_at: Date }[]>`
-          SELECT id::text, shopify_created_at
-          FROM shopify_orders
-          WHERE sellercloud_order_id IS NULL
-            AND shopify_created_at > NOW() - INTERVAL '60 days'
-        `
-
-  const candidatesBefore = candidates.length
-  if (candidatesBefore === 0) {
-    return {
-      candidatesBefore: 0,
-      pagesScanned: 0,
-      matched: 0,
-      candidatesRemaining: 0,
-      stoppedReason: 'all_found',
-    }
+function scItemMatches(
+  item: ScListOrder,
+  target: {
+    shopifyNumericId: string
+    shopifyOrderNumber?: string | null
+    shopifyName?: string | null
+  },
+): boolean {
+  const itemIds = scItemShopifyIdentifiers(item)
+  const wanted = new Set<string>()
+  wanted.add(target.shopifyNumericId)
+  if (target.shopifyOrderNumber) wanted.add(target.shopifyOrderNumber)
+  if (target.shopifyName) {
+    wanted.add(target.shopifyName)
+    // Strip common prefix ("SS311567" -> "311567") so OrderSourceOrderID
+    // comparisons work either way.
+    const stripped = target.shopifyName.replace(/^[A-Za-z]+/, '')
+    if (stripped) wanted.add(stripped)
   }
 
-  // Map by Shopify numeric ID for O(1) lookup during the walk.
-  const pending = new Map<string, { createdAt: Date }>()
-  let oldest = new Date()
-  for (const c of candidates) {
-    pending.set(c.id, { createdAt: new Date(c.shopify_created_at) })
-    if (c.shopify_created_at < oldest) oldest = new Date(c.shopify_created_at)
+  for (const id of itemIds) {
+    if (wanted.has(id)) return true
+    // Also check prefix-stripped SC values (e.g. CompletedOrderID = "SS311567").
+    const stripped = id.replace(/^[A-Za-z]+/, '')
+    if (stripped && wanted.has(stripped)) return true
   }
-
-  // Buffer: SC orders may be created slightly before/after the Shopify order,
-  // so we walk back a bit further than strict equality would demand.
-  const stopBefore = new Date(oldest.getTime() - 2 * 24 * 60 * 60 * 1000)
-
-  let matched = 0
-  let pagesScanned = 0
-  let stoppedReason: BackfillResult['stoppedReason'] = 'page_cap'
-
-  for (let page = 1; page <= maxPages; page++) {
-    const items = await listScOrders(page, 250)
-    pagesScanned = page
-
-    if (items.length === 0) {
-      stoppedReason = 'empty_page'
-      break
-    }
-
-    for (const item of items) {
-      const shopifyId = item.EBaySellingManagerSalesRecordNumber
-      if (!shopifyId) continue
-      if (!pending.has(shopifyId)) continue
-
-      try {
-        await sql`
-          UPDATE shopify_orders
-          SET sellercloud_order_id = ${item.ID}, updated_at = NOW()
-          WHERE id = ${shopifyId}::bigint
-            AND sellercloud_order_id IS NULL
-        `
-        matched += 1
-        pending.delete(shopifyId)
-      } catch {
-        // Swallow individual row failures so one bad row doesn't abort the walk.
-      }
-    }
-
-    if (pending.size === 0) {
-      stoppedReason = 'all_found'
-      break
-    }
-
-    // Check if this page's oldest order is already past all candidates.
-    // If so, further pagination won't help — no older candidate could match
-    // older SC orders that don't exist yet in Shopify.
-    const pageOldest = new Date(items[items.length - 1].TimeOfOrder)
-    if (pageOldest < stopBefore) {
-      stoppedReason = 'walked_past_oldest'
-      break
-    }
-  }
-
-  return {
-    candidatesBefore,
-    pagesScanned,
-    matched,
-    candidatesRemaining: pending.size,
-    stoppedReason,
-  }
+  return false
 }
 
-// -------------- Targeted SC lookup (per-order filter) --------------
+// -------------- Targeted per-order lookup (verified) --------------
 
 /**
- * SC supports filtering its order list by several Shopify-identifier fields
- * (on instances where the filter params are actually respected — Autososs
- * notably ignores them, so this may return 0 results per call there).
+ * Find the SC order for a Shopify order, verifying the match.
  *
- * We don't know which field SC's importer is populating on a given instance,
- * so we try them in a deliberate order per order:
+ * Strategy:
+ *   1. Ask SC for orders filtered by each of several field names.
+ *   2. Iterate every returned item (not just items[0]).
+ *   3. Verify at least one of the item's Shopify-identifier fields
+ *      actually equals one of our target identifiers.
+ *   4. Return the first verified match. If no item verifies, return null.
  *
- *   1. EBaySellingManagerSalesRecordNumber  — Shopify numeric ID (documented)
- *   2. OrderSourceOrderID                   — Shopify order number
- *   3. CompletedOrderID                     — Shopify name ("SS311729")
+ * This is safe against Autososs's filter-ignoring bug: if SC returns a
+ * page of newest orders regardless of our filter, none of them will pass
+ * verification for a random Shopify order, and we correctly return null.
  */
-const SC_LOOKUP_FIELDS = [
-  'EBaySellingManagerSalesRecordNumber',
+const SC_FILTER_FIELDS = [
   'OrderSourceOrderID',
+  'EBaySellingManagerSalesRecordNumber',
+  'ChannelOrderID',
   'CompletedOrderID',
 ] as const
 
-/**
- * Find one SC order by any of its plausible Shopify-identifier fields.
- *
- * Each attempt is a single filtered list call, so even if SC has 500k orders
- * we only pull back 0–1 matching records per attempt. Returns the first hit.
- */
 export async function findScOrderByAnyShopifyId(identifiers: {
   shopifyNumericId: string | number
   shopifyOrderNumber?: string | number | null
   shopifyName?: string | null
 }): Promise<{ ID: number; matchedOn: string } | null> {
-  const byField: Record<string, string | null> = {
-    EBaySellingManagerSalesRecordNumber: String(identifiers.shopifyNumericId),
-    OrderSourceOrderID: identifiers.shopifyOrderNumber
-      ? String(identifiers.shopifyOrderNumber)
-      : null,
-    CompletedOrderID: identifiers.shopifyName ?? null,
+  const shopifyNumericId = String(identifiers.shopifyNumericId)
+  const shopifyOrderNumber = identifiers.shopifyOrderNumber
+    ? String(identifiers.shopifyOrderNumber)
+    : null
+  const shopifyName = identifiers.shopifyName ?? null
+
+  const target = { shopifyNumericId, shopifyOrderNumber, shopifyName }
+
+  // What to send as the filter value for each field. The server may or may
+  // not honor the filter; either way we verify client-side.
+  const filterValueByField: Record<string, string | null> = {
+    OrderSourceOrderID: shopifyOrderNumber,
+    EBaySellingManagerSalesRecordNumber: shopifyNumericId,
+    ChannelOrderID: shopifyNumericId,
+    CompletedOrderID: shopifyName,
   }
 
-  for (const field of SC_LOOKUP_FIELDS) {
-    const value = byField[field]
-    if (!value) continue
+  for (const field of SC_FILTER_FIELDS) {
+    const filterValue = filterValueByField[field]
+    if (!filterValue) continue
 
     try {
       const params = new URLSearchParams({
-        [`model.${field}`]: value,
+        [`model.${field}`]: filterValue,
         'model.pageNumber': '1',
-        'model.pageSize': '5',
+        'model.pageSize': '50', // larger page means if filter is honored we catch it, if ignored we still scan the recent window
       })
-      const data = await scRequest<{ Items?: ScListOrder[] }>(
-        `/api/Orders?${params.toString()}`,
-      )
+      const data = await scRequest<ScListResponse>(`/api/Orders?${params.toString()}`)
       const items = data.Items ?? []
-      if (items.length > 0) {
-        return { ID: items[0].ID, matchedOn: field }
+
+      for (const item of items) {
+        if (scItemMatches(item, target)) {
+          // Figure out which field on the item actually produced the match,
+          // for logging/diagnostic purposes.
+          const itemIds = scItemShopifyIdentifiers(item)
+          const wanted = [
+            shopifyNumericId,
+            shopifyOrderNumber,
+            shopifyName,
+            shopifyName?.replace(/^[A-Za-z]+/, ''),
+          ].filter(Boolean) as string[]
+          let matchedOnField = 'unknown'
+          for (const [key, value] of Object.entries(item)) {
+            if (typeof value === 'string' && (wanted.includes(value) || wanted.includes(value.replace(/^[A-Za-z]+/, '')))) {
+              matchedOnField = key
+              break
+            }
+          }
+          return { ID: item.ID, matchedOn: matchedOnField }
+        }
       }
     } catch {
-      // Swallow per-field errors — move on to the next field.
+      // Move on to the next field if this one errors out.
     }
   }
 
   return null
 }
 
-// -------------- Targeted bulk backfill --------------
+// -------------- Targeted bulk backfill (verified) --------------
 
 export type TargetedBackfillResult = {
   candidatesBefore: number
@@ -384,23 +295,11 @@ export type TargetedBackfillResult = {
   errors: Array<{ orderNumber: string; error: string }>
 }
 
-/**
- * Per-order targeted backfill. Instead of walking all SC orders and checking
- * each one against our candidate set (O(N_sc_orders)), we go candidate-by-
- * candidate and ask SC directly "do you have this order, by any of three
- * identifier fields?" (O(N_candidates)).
- *
- * Much better when most candidates aren't in SC yet (3 SC requests per miss
- * is still cheaper than paging through 10k SC orders to find 1 match).
- *
- * Takes about 0.3–1.0s per order depending on SC latency. Default limit of
- * 60 keeps us comfortably under Vercel's 60s function timeout.
- */
 export async function backfillScOrderIdsTargeted(options: {
   limit?: number
   scope?: 'dashboard' | 'all_recent'
 } = {}): Promise<TargetedBackfillResult> {
-  const limit = options.limit ?? 60
+  const limit = options.limit ?? 25
   const scope = options.scope ?? 'dashboard'
 
   const candidates =
@@ -440,7 +339,6 @@ export async function backfillScOrderIdsTargeted(options: {
 
   for (const row of candidates) {
     try {
-      // Shopify "name" (e.g. "SS311729") lives in raw_payload.name.
       const shopifyName =
         typeof row.raw_payload?.name === 'string' ? row.raw_payload.name : null
 
@@ -469,7 +367,6 @@ export async function backfillScOrderIdsTargeted(options: {
     }
   }
 
-  // Recount what's left.
   const [{ remaining }] =
     scope === 'dashboard'
       ? await sql<{ remaining: string }[]>`
@@ -502,12 +399,209 @@ export async function backfillScOrderIdsTargeted(options: {
   }
 }
 
-// -------------- Order notes --------------
+// -------------- Pagination walk (verified) --------------
+
+export type BackfillResult = {
+  candidatesBefore: number
+  pagesScanned: number
+  matched: number
+  candidatesRemaining: number
+  stoppedReason: 'all_found' | 'page_cap' | 'walked_past_oldest' | 'empty_page'
+}
 
 /**
- * Add a note to a Sellercloud order.
- * Endpoint: POST /rest/api/Orders/{id}/Notes
+ * Walk SC orders newest-first and match each against our pending candidates.
+ * Verification is done via scItemMatches (checks all plausible ID fields on
+ * the item), so this is safe even if SC's order shape varies.
  */
+export async function backfillScOrderIds(options: {
+  scope?: 'dashboard' | 'all_recent'
+  maxPages?: number
+} = {}): Promise<BackfillResult> {
+  const scope = options.scope ?? 'dashboard'
+  const maxPages = options.maxPages ?? 40
+
+  const candidates =
+    scope === 'dashboard'
+      ? await sql<{ id: string; order_number: string; raw_payload: any; shopify_created_at: Date }[]>`
+          SELECT id::text, order_number, raw_payload, shopify_created_at
+          FROM shopify_orders
+          WHERE sellercloud_order_id IS NULL
+            AND (
+              ((fulfillment_status IS NULL OR fulfillment_status != 'fulfilled')
+               AND shopify_created_at < NOW() - INTERVAL '3 days'
+               AND shopify_created_at > NOW() - INTERVAL '90 days')
+              OR
+              (is_vip = TRUE AND shopify_created_at > NOW() - INTERVAL '7 days')
+            )
+        `
+      : await sql<{ id: string; order_number: string; raw_payload: any; shopify_created_at: Date }[]>`
+          SELECT id::text, order_number, raw_payload, shopify_created_at
+          FROM shopify_orders
+          WHERE sellercloud_order_id IS NULL
+            AND shopify_created_at > NOW() - INTERVAL '60 days'
+        `
+
+  const candidatesBefore = candidates.length
+  if (candidatesBefore === 0) {
+    return {
+      candidatesBefore: 0,
+      pagesScanned: 0,
+      matched: 0,
+      candidatesRemaining: 0,
+      stoppedReason: 'all_found',
+    }
+  }
+
+  // Build a list of candidate targets keyed by shopify id for removal after match.
+  const pending = new Map<
+    string,
+    {
+      shopifyNumericId: string
+      shopifyOrderNumber: string | null
+      shopifyName: string | null
+      createdAt: Date
+    }
+  >()
+  let oldest = new Date()
+  for (const c of candidates) {
+    const shopifyName =
+      typeof c.raw_payload?.name === 'string' ? c.raw_payload.name : null
+    pending.set(c.id, {
+      shopifyNumericId: c.id,
+      shopifyOrderNumber: c.order_number,
+      shopifyName,
+      createdAt: new Date(c.shopify_created_at),
+    })
+    if (c.shopify_created_at < oldest) oldest = new Date(c.shopify_created_at)
+  }
+
+  const stopBefore = new Date(oldest.getTime() - 2 * 24 * 60 * 60 * 1000)
+
+  let matched = 0
+  let pagesScanned = 0
+  let stoppedReason: BackfillResult['stoppedReason'] = 'page_cap'
+
+  for (let page = 1; page <= maxPages; page++) {
+    const items = await listScOrders(page, 250)
+    pagesScanned = page
+
+    if (items.length === 0) {
+      stoppedReason = 'empty_page'
+      break
+    }
+
+    for (const item of items) {
+      // Check this SC item against every pending candidate. Typically O(1)
+      // because most SC items share zero identifiers with our pending set.
+      for (const [shopifyKey, target] of pending) {
+        if (scItemMatches(item, target)) {
+          try {
+            await sql`
+              UPDATE shopify_orders
+              SET sellercloud_order_id = ${item.ID}, updated_at = NOW()
+              WHERE id = ${shopifyKey}::bigint
+                AND sellercloud_order_id IS NULL
+            `
+            matched += 1
+            pending.delete(shopifyKey)
+          } catch {
+            // Swallow — don't let one bad row abort the whole walk.
+          }
+          break
+        }
+      }
+    }
+
+    if (pending.size === 0) {
+      stoppedReason = 'all_found'
+      break
+    }
+
+    const pageOldest = new Date(items[items.length - 1].TimeOfOrder)
+    if (pageOldest < stopBefore) {
+      stoppedReason = 'walked_past_oldest'
+      break
+    }
+  }
+
+  return {
+    candidatesBefore,
+    pagesScanned,
+    matched,
+    candidatesRemaining: pending.size,
+    stoppedReason,
+  }
+}
+
+// -------------- Single-order resolver (used by action form) --------------
+
+/**
+ * Resolve a Shopify order to its SC counterpart. Fast path: DB cache.
+ * Slow path: targeted verified lookup, with pagination fallback.
+ */
+const MAX_LIVE_PAGES = 10
+
+export async function findScOrderByShopifyId(
+  shopifyIdentifier: string | number,
+): Promise<{ ID: number } | null> {
+  const shopifyId = String(shopifyIdentifier)
+
+  const cached = await sql<{ sellercloud_order_id: string | null; order_number: string; raw_payload: any }[]>`
+    SELECT sellercloud_order_id::text, order_number, raw_payload
+    FROM shopify_orders
+    WHERE id = ${shopifyId}::bigint
+    LIMIT 1
+  `
+  if (cached[0]?.sellercloud_order_id) {
+    return { ID: parseInt(cached[0].sellercloud_order_id) }
+  }
+
+  const shopifyOrderNumber = cached[0]?.order_number ?? null
+  const shopifyName =
+    typeof cached[0]?.raw_payload?.name === 'string' ? cached[0].raw_payload.name : null
+
+  // Try targeted first (usually one or two API calls).
+  const targeted = await findScOrderByAnyShopifyId({
+    shopifyNumericId: shopifyId,
+    shopifyOrderNumber,
+    shopifyName,
+  })
+  if (targeted) {
+    await sql`
+      UPDATE shopify_orders
+      SET sellercloud_order_id = ${targeted.ID}, updated_at = NOW()
+      WHERE id = ${shopifyId}::bigint
+    `
+    return { ID: targeted.ID }
+  }
+
+  // Fallback: walk pages, verifying every item.
+  const target = {
+    shopifyNumericId: shopifyId,
+    shopifyOrderNumber,
+    shopifyName,
+  }
+  for (let page = 1; page <= MAX_LIVE_PAGES; page++) {
+    const items = await listScOrders(page, 250)
+    if (items.length === 0) break
+
+    const match = items.find((i) => scItemMatches(i, target))
+    if (match) {
+      await sql`
+        UPDATE shopify_orders
+        SET sellercloud_order_id = ${match.ID}, updated_at = NOW()
+        WHERE id = ${shopifyId}::bigint
+      `
+      return { ID: match.ID }
+    }
+  }
+
+  return null
+}
+
+// -------------- Order notes --------------
+
 export async function addOrderNote(scOrderId: number | string, note: string) {
   await scRequest(`/api/Orders/${scOrderId}/Notes`, {
     method: 'POST',
@@ -518,14 +612,6 @@ export async function addOrderNote(scOrderId: number | string, note: string) {
 
 // -------------- Shipments --------------
 
-/**
- * Mark an order as shipped with tracking info.
- * Endpoint: POST /rest/api/Orders/{id}/Shipment (singular) per Sellercloud docs.
- *
- * Shape per the "Mark Order as Shipped" endpoint. Adjust `ShippingCarrier` /
- * `ShippingService` to match valid keys on your SC instance — get the full list
- * from GET /api/Inventory/ShippingCarriers.
- */
 export async function createShipment(
   scOrderId: number | string,
   input: { carrier: string; tracking: string; note?: string },
