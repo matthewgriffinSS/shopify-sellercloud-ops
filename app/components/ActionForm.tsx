@@ -12,8 +12,10 @@ type ActionType =
   | 'contacted'
   | 'recovery_email_sent'
 
+type ResourceType = 'order' | 'draft_order' | 'abandoned_checkout'
+
 type Props = {
-  resourceType: 'order' | 'draft_order' | 'abandoned_checkout'
+  resourceType: ResourceType
   resourceId: string
   resourceLabel: string
   actions: Array<{ value: ActionType; label: string }>
@@ -23,6 +25,11 @@ type Props = {
 /**
  * Inline action form. Shows a dropdown of action types, optional fields,
  * and posts to /api/actions/process-order on submit.
+ *
+ * Only `order` resources have a Sellercloud counterpart — draft orders and
+ * abandoned carts live in Shopify only until they convert. The UI text
+ * below branches on resourceType so we don't promise SC integration for
+ * carts/drafts (matching the backend, which already skips SC for those).
  */
 export function ActionForm({ resourceType, resourceId, resourceLabel, actions, onClose }: Props) {
   const router = useRouter()
@@ -34,6 +41,20 @@ export function ActionForm({ resourceType, resourceId, resourceLabel, actions, o
   const [error, setError] = useState<string | null>(null)
 
   const needsTracking = actionType === 'mark_fulfilled'
+
+  // Carts and drafts: no Sellercloud involved, so neutral labels.
+  // Orders: keep SC language since the note actually lands in Sellercloud.
+  const hasSellercloud = resourceType === 'order'
+  const noteLabel = hasSellercloud ? 'SC note' : 'Note'
+  const notePlaceholder = hasSellercloud
+    ? 'Optional note that will appear on the Sellercloud order'
+    : 'Optional note (logged in the dashboard only)'
+  const submitLabel = hasSellercloud ? 'Submit to SC ↗' : 'Save'
+  const contextText = hasSellercloud
+    ? 'Posts a note on the linked Sellercloud order and records the action in this dashboard.'
+    : resourceType === 'draft_order'
+      ? 'Records the action in this dashboard. Drafts only exist in Shopify — nothing is posted elsewhere.'
+      : 'Records the action in this dashboard. Abandoned carts only exist in Shopify until a customer completes checkout — nothing is posted to Sellercloud.'
 
   async function submit() {
     setSubmitting(true)
@@ -106,17 +127,17 @@ export function ActionForm({ resourceType, resourceId, resourceLabel, actions, o
         </>
       )}
       <div className="act-row">
-        <label>SC note</label>
+        <label>{noteLabel}</label>
         <input
           type="text"
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder="Optional note that will appear on the Sellercloud order"
+          placeholder={notePlaceholder}
         />
       </div>
       <div className="act-row">
         <button className="btn-sm btn-primary" onClick={submit} disabled={submitting}>
-          {submitting ? 'Submitting…' : 'Submit to SC ↗'}
+          {submitting ? 'Submitting…' : submitLabel}
         </button>
         {onClose && (
           <button className="btn-sm" onClick={onClose} disabled={submitting}>
@@ -129,14 +150,17 @@ export function ActionForm({ resourceType, resourceId, resourceLabel, actions, o
           {error}
         </div>
       )}
-      <div className="act-ctx">
-        Posts a note on the linked Sellercloud order and records the action in this dashboard.
-      </div>
+      <div className="act-ctx">{contextText}</div>
     </div>
   )
 }
 
-type RowProps = { resourceType: Props['resourceType']; resourceId: string; resourceLabel: string; actions: Props['actions'] }
+type RowProps = {
+  resourceType: Props['resourceType']
+  resourceId: string
+  resourceLabel: string
+  actions: Props['actions']
+}
 
 /**
  * Convenience wrapper: renders a "Process ↓" button that expands into the form.
