@@ -41,6 +41,13 @@ export async function statusMapForResources(
   return map
 }
 
+/**
+ * Late fulfillments list. Excludes orders that have already been handled
+ * (processing_actions has a terminal action like mark_processed or
+ * mark_fulfilled for them). That means clicking "Mark handled" on an order
+ * in either the Late or VIP table removes it from BOTH tables on the next
+ * page load — the filter is order-scoped, not table-scoped.
+ */
 export async function fetchLateFulfillments() {
   return sql<
     {
@@ -55,17 +62,29 @@ export async function fetchLateFulfillments() {
       sellercloud_order_id: string | null
     }[]
   >`
-    SELECT id::text, order_number, customer_name, total_price::text,
-           assigned_rep, service_type, shopify_created_at, tags,
-           sellercloud_order_id::text
-    FROM shopify_orders
-    WHERE (fulfillment_status IS NULL OR fulfillment_status != 'fulfilled')
-      AND shopify_created_at < NOW() - INTERVAL '3 days'
-    ORDER BY shopify_created_at ASC
+    SELECT o.id::text, o.order_number, o.customer_name, o.total_price::text,
+           o.assigned_rep, o.service_type, o.shopify_created_at, o.tags,
+           o.sellercloud_order_id::text
+    FROM shopify_orders o
+    WHERE (o.fulfillment_status IS NULL OR o.fulfillment_status != 'fulfilled')
+      AND o.shopify_created_at < NOW() - INTERVAL '3 days'
+      AND NOT EXISTS (
+        SELECT 1 FROM processing_actions pa
+        WHERE pa.resource_type = 'order'
+          AND pa.resource_id = o.id::text
+          AND pa.sellercloud_error IS NULL
+          AND pa.action_type IN ('mark_processed', 'mark_fulfilled', 'recovery_email_sent')
+      )
+    ORDER BY o.shopify_created_at ASC
     LIMIT 50
   `
 }
 
+/**
+ * VIP orders from the last 7 days. Same handled-exclusion logic as
+ * fetchLateFulfillments, so "Mark handled" clears an order from both views
+ * consistently.
+ */
 export async function fetchVipOrders() {
   return sql<
     {
@@ -81,63 +100,27 @@ export async function fetchVipOrders() {
       sellercloud_order_id: string | null
     }[]
   >`
-    SELECT id::text, order_number, customer_name, total_price::text,
-           assigned_rep, service_type, shopify_created_at, fulfillment_status, tags,
-           sellercloud_order_id::text
-    FROM shopify_orders
-    WHERE is_vip = TRUE
-      AND shopify_created_at > NOW() - INTERVAL '7 days'
-    ORDER BY shopify_created_at DESC
+    SELECT o.id::text, o.order_number, o.customer_name, o.total_price::text,
+           o.assigned_rep, o.service_type, o.shopify_created_at, o.fulfillment_status, o.tags,
+           o.sellercloud_order_id::text
+    FROM shopify_orders o
+    WHERE o.is_vip = TRUE
+      AND o.shopify_created_at > NOW() - INTERVAL '7 days'
+      AND NOT EXISTS (
+        SELECT 1 FROM processing_actions pa
+        WHERE pa.resource_type = 'order'
+          AND pa.resource_id = o.id::text
+          AND pa.sellercloud_error IS NULL
+          AND pa.action_type IN ('mark_processed', 'mark_fulfilled', 'recovery_email_sent')
+      )
+    ORDER BY o.shopify_created_at DESC
     LIMIT 50
   `
 }
 
 /**
  * Per-rep summary tiles for the /sales page.
- *
- * Sibling-conversion filter: if another draft with the same customer
- * (matched by email or normalized phone) has converted in the last 30 days,
- * this draft is hidden. That way if we send a customer 3 quotes and they
- * pay one, the other 2 disappear automatically.
  */
-export async function fetchDraftsByRep() {
-  return sql<
-    { assigned_rep: string; count: string; total_value: string; stale_count: string }[]
-  >`
-    SELECT
-      COALESCE(assigned_rep, 'unassigned') AS assigned_rep,
-      COUNT(*)::text AS count,
-      COALESCE(SUM(total_price), 0)::text AS total_value,
-      COUNT(*) FILTER (WHERE shopify_created_at < NOW() - INTERVAL '7 days')::text AS stale_count
-    FROM shopify_draft_orders d
-    WHERE status = 'invoice_sent'
-      AND shopify_created_at > NOW() - INTERVAL '30 days'
-      AND service_type IS NULL
-      AND can_delete = FALSE
-      AND converted_order_id IS NULL
-      AND converted_at IS NULL
-      AND NOT EXISTS (
-        SELECT 1 FROM shopify_draft_orders sib
-        WHERE sib.id != d.id
-          AND sib.converted_at IS NOT NULL
-          AND sib.converted_at > NOW() - INTERVAL '30 days'
-          AND (
-            (sib.customer_email IS NOT NULL
-             AND d.customer_email IS NOT NULL
-             AND LOWER(sib.customer_email) = LOWER(d.customer_email))
-            OR
-            (sib.customer_phone IS NOT NULL
-             AND d.customer_phone IS NOT NULL
-             AND LENGTH(regexp_replace(sib.customer_phone, '\D', '', 'g')) >= 10
-             AND RIGHT(regexp_replace(sib.customer_phone, '\D', '', 'g'), 10) =
-                 RIGHT(regexp_replace(d.customer_phone, '\D', '', 'g'), 10))
-          )
-      )
-    GROUP BY COALESCE(assigned_rep, 'unassigned')
-    ORDER BY SUM(total_price) DESC
-  `
-}
-
 export type DraftFollowupRow = {
   id: string
   name: string
@@ -145,7 +128,7 @@ export type DraftFollowupRow = {
   customer_email: string | null
   customer_phone: string | null
   total_price: string
-  status: string
+  status: string | null
   tags: string[]
   assigned_rep: string | null
   service_type: string | null
@@ -163,22 +146,6 @@ export type DraftFollowupRow = {
   shopify_created_at: Date
 }
 
-/**
- * Full detail for a rep's drafts page.
- *
- * Excludes:
- *  - service-tagged drafts (sdss/install/rebuild/shock service)
- *  - rows closed out by the rep (can_delete = true)
- *  - drafts that have converted to a real order (converted_order_id set,
- *    either by Shopify itself or by a rep marking it closed)
- *  - drafts belonging to a customer who has ANY other draft that converted
- *    in the last 30 days (matched by email or normalized phone)
- *
- * Pass 'unassigned' to get drafts with no assigned_rep.
- *
- * Sorted oldest-first so the drafts closest to the 30-day cutoff sit at
- * the top of the list and get chased first.
- */
 export async function fetchDraftsForRep(rep: string): Promise<DraftFollowupRow[]> {
   const repFilter = rep === 'unassigned' ? null : rep
   return sql<DraftFollowupRow[]>`
@@ -263,10 +230,17 @@ export async function fetchAbandonedCarts() {
 
 export async function fetchMetrics() {
   const [late] = await sql<{ revenue: string; count: string }[]>`
-    SELECT COALESCE(SUM(total_price), 0)::text AS revenue, COUNT(*)::text AS count
-    FROM shopify_orders
-    WHERE (fulfillment_status IS NULL OR fulfillment_status != 'fulfilled')
-      AND shopify_created_at < NOW() - INTERVAL '3 days'
+    SELECT COALESCE(SUM(o.total_price), 0)::text AS revenue, COUNT(*)::text AS count
+    FROM shopify_orders o
+    WHERE (o.fulfillment_status IS NULL OR o.fulfillment_status != 'fulfilled')
+      AND o.shopify_created_at < NOW() - INTERVAL '3 days'
+      AND NOT EXISTS (
+        SELECT 1 FROM processing_actions pa
+        WHERE pa.resource_type = 'order'
+          AND pa.resource_id = o.id::text
+          AND pa.sellercloud_error IS NULL
+          AND pa.action_type IN ('mark_processed', 'mark_fulfilled', 'recovery_email_sent')
+      )
   `
 
   const [abandoned] = await sql<{ revenue: string; count: string }[]>`

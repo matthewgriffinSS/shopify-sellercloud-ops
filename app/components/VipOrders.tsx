@@ -33,6 +33,9 @@ export async function VipOrders() {
           <tbody>
             {rows.map((r) => {
               const status = statusMap.get(r.id)
+              // Query already excludes terminal-action orders; this only
+              // catches out-of-sync display states where Shopify marked
+              // an order fulfilled but we haven't logged a matching action.
               const processed =
                 status?.status === 'processed' || r.fulfillment_status === 'fulfilled'
               return (
@@ -70,9 +73,7 @@ export async function VipOrders() {
                   </td>
                   <td>{formatMoney(r.total_price)}</td>
                   <td>
-                    {processed ? (
-                      <span className="bdg b-s">Processed</span>
-                    ) : status?.status === 'in_progress' ? (
+                    {status?.status === 'in_progress' ? (
                       <span className="bdg b-w">In progress</span>
                     ) : (
                       <span className="bdg b-d">Needs action</span>
@@ -84,8 +85,7 @@ export async function VipOrders() {
                       resourceId={r.id}
                       resourceLabel={`#${r.order_number} — ${r.customer_name ?? 'customer'} · ${formatMoney(r.total_price)}`}
                       actions={[
-                        { value: 'add_note', label: 'Add white-glove note' },
-                        { value: 'escalate', label: 'Prioritize in warehouse' },
+                        { value: 'add_note', label: 'Add note' },
                         { value: 'mark_processed', label: 'Mark handled' },
                       ]}
                     />

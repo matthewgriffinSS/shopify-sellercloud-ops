@@ -36,6 +36,9 @@ export async function LateFulfillments() {
               const days = daysAgo(new Date(r.shopify_created_at))
               const lateBadge = days >= 7 ? 'b-d' : 'b-w'
               const status = statusMap.get(r.id)
+              // Note: rows with a terminal action are already excluded at the
+              // query level, so `processed` here only catches the rare case
+              // where status data is out of sync. Left in as defensive display.
               const processed = status?.status === 'processed'
               return (
                 <tr key={r.id} className={processed ? 'done' : ''}>
@@ -73,11 +76,7 @@ export async function LateFulfillments() {
                   </td>
                   <td>{formatMoney(r.total_price)}</td>
                   <td>
-                    {processed ? (
-                      <span className="bdg b-s">
-                        Processed {status?.actionType.replace(/_/g, ' ')}
-                      </span>
-                    ) : status?.status === 'in_progress' ? (
+                    {status?.status === 'in_progress' ? (
                       <span className="bdg b-w">In progress</span>
                     ) : (
                       <span className="bdg b-d">Needs action</span>
@@ -89,10 +88,8 @@ export async function LateFulfillments() {
                       resourceId={r.id}
                       resourceLabel={`#${r.order_number} — ${r.customer_name ?? 'customer'} · ${formatMoney(r.total_price)}`}
                       actions={[
-                        { value: 'mark_fulfilled', label: 'Mark fulfilled (with tracking)' },
-                        { value: 'add_note', label: 'Add note to Sellercloud' },
-                        { value: 'escalate', label: 'Escalate to warehouse' },
-                        { value: 'release_hold', label: 'Release hold' },
+                        { value: 'add_note', label: 'Add note' },
+                        { value: 'mark_processed', label: 'Mark handled' },
                       ]}
                     />
                   </td>

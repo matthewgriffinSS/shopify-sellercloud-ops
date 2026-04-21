@@ -1,40 +1,49 @@
-Drop `fix/` contents over your repo. Three files, all touching the SC-ID
-pagination timeout issue that's been hitting the Vercel function cap.
+Trims action options to "Add note" and "Mark handled", and makes
+Mark-handled hide the order from BOTH the Late Fulfillments and VIP
+Orders tables at once.
 
-MODIFIED (1):
-  app/api/cron/check-late-fulfillments/route.ts
-    Removed the SC backfill block. Now only does the Shopify reconciliation.
-    Should finish in <5s every time.
+Three file changes:
 
-NEW (2):
-  app/api/cron/backfill-sc-ids/route.ts
-    Dedicated SC backfill endpoint with an adaptive page budget — starts
-    with the targeted lookup (fast when SC respects filters), then falls
-    back to pagination with only as many pages as the remaining time
-    allows. At 18s/page observed on Autososs, that's typically 3 pages.
+  MODIFIED:
+    lib/queries.ts
+      fetchLateFulfillments + fetchVipOrders now exclude orders that
+      have a terminal processing_action logged (mark_processed,
+      mark_fulfilled, or recovery_email_sent). Because both tables
+      filter on the SAME processing_actions table, clicking Mark
+      handled on an order in either table hides it from both.
 
-  .github/workflows/backfill-sc-ids.yml
-    Runs every 2h at :45 past. Staggered from the other two (:15) to
-    avoid hammering Vercel at the same minute.
+    app/components/LateFulfillments.tsx
+      Action dropdown trimmed to just Add note + Mark handled. Removed
+      mark_fulfilled (required tracking #), escalate, release_hold.
 
-NO ACTION NEEDED on vercel.json — it still pings check-late-fulfillments
-once daily as a backup, and that endpoint is now safe.
+    app/components/VipOrders.tsx
+      Same trim — Add note + Mark handled only. Removed escalate.
 
-AFTER COMMIT:
-  1. Push to main
-  2. GitHub Actions → Backfill Sellercloud IDs → Run workflow (confirm 200)
-  3. Re-run the failed "Check late fulfillments" workflow — should be green
-     in ~2s now that the SC walk is out of its way.
+NOT CHANGED but worth knowing:
+  ActionForm.tsx — still supports all 7 action types at the schema
+  level. Other components that use it (draft tables, abandoned carts)
+  keep working. Only these two callers pass a reduced action list.
 
-NOTES ON AUTOSOSS SPECIFICALLY:
-  Your Vercel log showed 18s per SC page. At that speed:
-    - 3 pages per run = 750 SC orders scanned
-    - 12 runs/day = 9,000 SC orders scanned daily
-  That's roughly a week's worth of orders. If SC import lag is shorter
-  than that, you'll catch everything. If not, click /health → Backfill
-  Sellercloud IDs to kick a manual run.
+  /api/actions/process-order — no change. mark_processed was already
+  a valid action type; no server work needed.
 
-  The real fix is upstream: SC support should not have that endpoint
-  taking 18s. If possible, open a ticket with them about
-  /rest/api/Orders list performance on your instance. Even fixing it to
-  1s per page would let a single run scan the whole backlog in seconds.
+AFTER DEPLOY:
+  1. Late Fulfillments dropdown shows only Add note + Mark handled.
+  2. VIP Orders dropdown shows the same two.
+  3. Clicking Mark handled → order disappears from both tables on the
+     next page load (Next.js's router.refresh() fires automatically
+     after a successful action).
+  4. The Metrics strip at top-of-page updates too — the "Revenue at
+     risk" and "Awaiting action" counts now exclude handled orders.
+
+ROLLBACK:
+  If a rep marks an order handled by mistake, delete its row from
+  the processing_actions table in Neon SQL Editor:
+
+    DELETE FROM processing_actions
+    WHERE resource_id = '<shopify numeric id>'
+      AND action_type = 'mark_processed'
+    ORDER BY created_at DESC
+    LIMIT 1;
+
+  On next page load the order reappears.
