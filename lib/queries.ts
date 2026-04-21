@@ -46,9 +46,7 @@ export async function statusMapForResources(
  * resource_id so it can be serialized over the server→client boundary.
  *
  * "Note" here means the most recent processing_actions row of action_type
- * 'add_note' that has a non-empty note in its payload. Used by OrdersTable
- * to display the latest note inline in the Status column instead of a
- * generic "In progress" badge.
+ * 'add_note' that has a non-empty note in its payload.
  */
 export async function recentNotesForResources(
   resourceType: 'order' | 'draft_order' | 'abandoned_checkout',
@@ -58,8 +56,6 @@ export async function recentNotesForResources(
   for (const id of resourceIds) out[id] = null
   if (resourceIds.length === 0) return out
 
-  // DISTINCT ON returns the most recent add_note action per resource.
-  // payload->>'note' extracts the text out of the JSONB.
   const rows = await sql<
     { resource_id: string; note: string | null }[]
   >`
@@ -82,9 +78,7 @@ export async function recentNotesForResources(
 /**
  * Late fulfillments list. Excludes orders that have already been handled
  * (processing_actions has a terminal action like mark_processed or
- * mark_fulfilled for them). That means clicking "Mark handled" on an order
- * in either the Late or VIP table removes it from BOTH tables on the next
- * page load — the filter is order-scoped, not table-scoped.
+ * mark_fulfilled for them).
  */
 export async function fetchLateFulfillments() {
   return sql<
@@ -119,9 +113,7 @@ export async function fetchLateFulfillments() {
 }
 
 /**
- * VIP orders from the last 7 days. Same handled-exclusion logic as
- * fetchLateFulfillments, so "Mark handled" clears an order from both views
- * consistently.
+ * VIP orders from the last 7 days.
  */
 export async function fetchVipOrders() {
   return sql<
@@ -158,11 +150,6 @@ export async function fetchVipOrders() {
 
 /**
  * Per-rep summary tiles for the /sales page.
- *
- * Sibling-conversion filter: if another draft with the same customer
- * (matched by email or normalized phone) has converted in the last 30 days,
- * this draft is hidden. That way if we send a customer 3 quotes and they
- * pay one, the other 2 disappear automatically.
  */
 export async function fetchDraftsByRep() {
   return sql<
@@ -289,6 +276,12 @@ export async function fetchDraftsForRep(rep: string): Promise<DraftFollowupRow[]
   `
 }
 
+/**
+ * Abandoned carts still in play. Excludes carts that:
+ *   - have converted to an order (recovered_at set by orders-create webhook)
+ *   - have been manually handled on the dashboard (processing_actions row
+ *     with a terminal action: recovery_email_sent, contacted, or mark_processed)
+ */
 export async function fetchAbandonedCarts() {
   return sql<
     {
@@ -302,12 +295,19 @@ export async function fetchAbandonedCarts() {
       contacted_at: Date | null
     }[]
   >`
-    SELECT id::text, customer_email, customer_name, total_price::text,
-           line_item_count, abandoned_at, assigned_rep, contacted_at
-    FROM abandoned_checkouts
-    WHERE abandoned_at > NOW() - INTERVAL '7 days'
-      AND recovered_at IS NULL
-    ORDER BY abandoned_at DESC
+    SELECT c.id::text, c.customer_email, c.customer_name, c.total_price::text,
+           c.line_item_count, c.abandoned_at, c.assigned_rep, c.contacted_at
+    FROM abandoned_checkouts c
+    WHERE c.abandoned_at > NOW() - INTERVAL '7 days'
+      AND c.recovered_at IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM processing_actions pa
+        WHERE pa.resource_type = 'abandoned_checkout'
+          AND pa.resource_id = c.id::text
+          AND pa.sellercloud_error IS NULL
+          AND pa.action_type IN ('recovery_email_sent', 'contacted', 'mark_processed')
+      )
+    ORDER BY c.abandoned_at DESC
     LIMIT 12
   `
 }
@@ -327,11 +327,19 @@ export async function fetchMetrics() {
       )
   `
 
+  // Abandoned-cart KPI mirrors the dashboard filter exactly: unhandled + in window.
   const [abandoned] = await sql<{ revenue: string; count: string }[]>`
-    SELECT COALESCE(SUM(total_price), 0)::text AS revenue, COUNT(*)::text AS count
-    FROM abandoned_checkouts
-    WHERE abandoned_at > NOW() - INTERVAL '7 days'
-      AND recovered_at IS NULL
+    SELECT COALESCE(SUM(c.total_price), 0)::text AS revenue, COUNT(*)::text AS count
+    FROM abandoned_checkouts c
+    WHERE c.abandoned_at > NOW() - INTERVAL '7 days'
+      AND c.recovered_at IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM processing_actions pa
+        WHERE pa.resource_type = 'abandoned_checkout'
+          AND pa.resource_id = c.id::text
+          AND pa.sellercloud_error IS NULL
+          AND pa.action_type IN ('recovery_email_sent', 'contacted', 'mark_processed')
+      )
   `
 
   const [processedToday] = await sql<{ count: string }[]>`
