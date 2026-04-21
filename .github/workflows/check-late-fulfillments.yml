@@ -1,0 +1,24 @@
+name: Check late fulfillments + SC IDs
+
+# Every 6 hours at :15 past. Same offset rationale as the carts cron.
+on:
+  schedule:
+    - cron: '15 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Hit /api/cron/check-late-fulfillments
+        run: |
+          response=$(curl -sS -w "\nHTTP_STATUS:%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.APP_URL }}/api/cron/check-late-fulfillments")
+          echo "$response"
+          status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTP_STATUS://')
+          if [ "$status" -ne 200 ]; then
+            echo "Cron returned HTTP $status — failing the job so GitHub notifies."
+            exit 1
+          fi
