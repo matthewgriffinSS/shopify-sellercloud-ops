@@ -10,6 +10,10 @@ export const dynamic = 'force-dynamic'
 /**
  * Handles: orders/create webhook.
  * Replaces: "Order reference" flow + "VIP order over $2000" flow.
+ *
+ * Also marks the matching abandoned cart as recovered if there is one.
+ * Shopify puts `checkout_token` on the created order; we store `token`
+ * on abandoned_checkouts, so the match is exact — no false positives.
  */
 export async function POST(req: NextRequest) {
   const raw = await req.text()
@@ -21,7 +25,12 @@ export async function POST(req: NextRequest) {
     return new Response('Invalid signature', { status: 401 })
   }
 
-  const order = JSON.parse(raw) as ShopifyOrder
+  // The order payload has more fields than our ShopifyOrder type exposes —
+  // notably checkout_token. Pull it off the parsed JSON before casting.
+  const orderRaw = JSON.parse(raw) as ShopifyOrder & { checkout_token?: string | null }
+  const order = orderRaw as ShopifyOrder
+  const checkoutToken = orderRaw.checkout_token ?? null
+
   const tags = parseTags(order.tags)
   const totalPrice = parseFloat(order.total_price)
   const customerName =
@@ -49,6 +58,19 @@ export async function POST(req: NextRequest) {
         raw_payload = EXCLUDED.raw_payload,
         updated_at = NOW()
     `
+
+    // Token-based abandoned cart recovery. Exact match, no false positives.
+    // If there's no matching cart, this is a no-op — we don't log anything,
+    // because most orders won't have been preceded by a $2k+ abandoned cart.
+    if (checkoutToken) {
+      await sql`
+        UPDATE abandoned_checkouts
+        SET recovered_at = NOW()
+        WHERE token = ${checkoutToken}
+          AND recovered_at IS NULL
+      `
+    }
+
     await logWebhook({
       topic: 'orders/create',
       shopifyId: order.id,
