@@ -387,10 +387,6 @@ tr:hover td {
   background: var(--bg3);
 }
 
-tr.done td {
-  opacity: 0.5;
-}
-
 tr.grand-total td {
   font-weight: 700;
   border-top: 2px solid var(--accent);
@@ -1049,4 +1045,154 @@ tr.grand-total td {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
+}
+
+.row-actions {
+  display: inline-flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.btn-row-note,
+.btn-row-handled {
+  font-size: 10px;
+  padding: 6px 11px;
+  border-radius: 5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.btn-row-note {
+  background: var(--bg3);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.btn-row-note:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(232, 93, 36, 0.08);
+}
+
+.btn-row-handled {
+  background: rgba(52, 199, 89, 0.1);
+  color: var(--green);
+  border: 1px solid rgba(52, 199, 89, 0.35);
+}
+
+.btn-row-handled:hover:not(:disabled) {
+  background: var(--green);
+  color: #0d0d0d;
+  border-color: var(--green);
+  box-shadow: 0 2px 10px rgba(52, 199, 89, 0.25);
+}
+
+.btn-row-note:disabled,
+.btn-row-handled:disabled {
+  opacity: 0.4;
+  cursor: wait;
+}
+
+/* When a row is "open" (its expansion form is showing), de-emphasize the
+   bottom border so the row visually merges with the form below it. */
+
+tr.row-open > td {
+  border-bottom: 1px solid transparent;
+  background: var(--bg3);
+}
+
+/* ===== Inline expansion row for the note form ===== */
+
+tr.row-form > td {
+  padding: 0;
+  background: var(--bg);
+  border-bottom: 2px solid var(--bg3);
+}
+
+.row-form-content {
+  padding: 16px 20px 18px;
+  background: linear-gradient(180deg, var(--bg2) 0%, var(--bg) 100%);
+  border-left: 3px solid var(--accent);
+}
+
+.row-form-label {
+  font-size: 10px;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.row-form-label strong {
+  color: var(--text);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+}
+
+.row-form-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-family: var(--font-body);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg2);
+  color: var(--text);
+  resize: vertical;
+  min-height: 64px;
+  margin-bottom: 10px;
+  line-height: 1.45;
+}
+
+.row-form-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.row-form-textarea::placeholder {
+  color: var(--text3);
+}
+
+.row-form-buttons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* ===== Inline note display in the Status column ===== */
+
+.row-note {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+  font-style: italic;
+  max-width: 100%;
+  line-height: 1.35;
+}
+
+.row-note-ic {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-style: normal;
+  opacity: 0.7;
+  line-height: 1.35;
+}
+
+.row-note-text {
+  color: var(--text2);
+  font-weight: 500;
+  font-style: italic;
+  word-break: break-word;
 }
