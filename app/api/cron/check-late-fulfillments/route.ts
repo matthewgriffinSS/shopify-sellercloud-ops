@@ -3,34 +3,28 @@ import { sql } from '@/lib/db'
 import { fetchStaleUnfulfilledOrders } from '@/lib/shopify'
 import { parseTags, isVipOrder } from '@/lib/tags'
 import { verifyCookieValue } from '@/lib/auth'
-import { backfillScOrderIds, type BackfillResult } from '@/lib/sellercloud'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 /**
- * Daily sync job. Called two ways:
+ * Daily / frequent Shopify reconciliation.
  *
- *   1. Automatically by Vercel Cron once a day at 07:00 UTC (vercel.json).
- *      Vercel sends Authorization: Bearer $CRON_SECRET.
- *   2. Manually by a logged-in user via the "Run now" button on /health.
- *      Uses the user's dashboard auth cookie.
+ * Scans Shopify for orders unfulfilled ≥ 3 days and upserts them into our
+ * mirror. Catches anything the orders/updated webhook might have dropped.
+ * Replaces the old "Late fulfillment" Shopify Flow.
  *
- * Does two things in sequence:
+ * Called two ways:
+ *   1. Vercel Cron (once daily at 07:00 UTC per vercel.json — Hobby-plan backup)
+ *   2. GitHub Actions (.github/workflows/check-late-fulfillments.yml) every 6h
+ *   3. Manual "Run now" button on /health (uses dashboard auth)
  *
- *   (a) Late-fulfillment scan: pull Shopify orders unfulfilled ≥ 3 days and
- *       upsert into our mirror. Catches anything the orders/updated webhook
- *       might have dropped. Replaces the old "Late fulfillment" Shopify Flow.
- *
- *   (b) SC ID backfill: for any orders visible on the support dashboard
- *       that still lack a sellercloud_order_id, paginate SC orders and
- *       match by EBaySellingManagerSalesRecordNumber. See
- *       lib/sellercloud.ts::backfillScOrderIds for the matching logic.
- *
- * Hobby plan allows one cron per day. If you need faster SC link freshness,
- * either click the /health button on demand or move to Pro for unlimited
- * crons (then consider every 4–6 hours).
+ * Note: SC ID backfill USED to run here too, but Autososs's /api/Orders
+ * endpoint is unpredictably slow (seen 18s per page). It kept timing out
+ * the combined job. SC backfill now runs as its own cron hitting
+ * /api/admin/backfill-sc-ids, which has its own wall-clock budget and
+ * can't take down the late-fulfillment job when SC is having a bad day.
  */
 export async function GET(req: NextRequest) {
   const auth = req.headers.get('authorization')
@@ -44,7 +38,6 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // -------- (a) Late-fulfillment reconciliation --------
   const { orders } = await fetchStaleUnfulfilledOrders(3)
   let upserted = 0
 
@@ -76,36 +69,9 @@ export async function GET(req: NextRequest) {
     upserted += 1
   }
 
-  // -------- (b) SC ID backfill --------
-  // Wrapped in try/catch so a SC outage never fails the whole cron — the
-  // Shopify reconciliation above is the more important half.
-  let scResult: BackfillResult | null = null
-  let scError: string | null = null
-  try {
-    scResult = await backfillScOrderIds({ scope: 'dashboard', maxPages: 15 })
-  } catch (err) {
-    scError = err instanceof Error ? err.message : String(err)
-  }
-
   return Response.json({
     ok: true,
     triggeredBy: isCron ? 'cron' : 'user',
-    shopifyScan: {
-      checked: orders.length,
-      upserted,
-    },
-    sellercloudBackfill: scResult
-      ? {
-          candidatesBefore: scResult.candidatesBefore,
-          matched: scResult.matched,
-          remaining: scResult.candidatesRemaining,
-          pagesScanned: scResult.pagesScanned,
-          stoppedReason: scResult.stoppedReason,
-        }
-      : { error: scError },
-    // Backward-compat: the /health UI reads `checked` and `upserted` at the
-    // top level. Preserve that so the existing button keeps showing sensible
-    // results without a UI redeploy.
     checked: orders.length,
     upserted,
   })

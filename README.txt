@@ -1,34 +1,40 @@
-Drop the `changes/` contents directly over your repo root.
+Drop `fix/` contents over your repo. Three files, all touching the SC-ID
+pagination timeout issue that's been hitting the Vercel function cap.
 
-MODIFIED (7):
-  vercel.json                                                   reverted to daily — GH Actions now drives higher-frequency crons
-  lib/sellercloud.ts                                            adds targeted helpers
-  app/health/page.tsx                                           better fetch errors + carts button
-  app/api/webhooks/shopify/orders-create/route.ts               token-based cart recovery
-  app/api/webhooks/shopify/orders-updated/route.ts              customer_name bug fix
-  app/api/webhooks/shopify/checkouts-abandoned/route.ts         UNDEFINED_VALUE fix
-  app/api/admin/backfill-sc-ids/route.ts                        targeted lookup + 50s budget
+MODIFIED (1):
+  app/api/cron/check-late-fulfillments/route.ts
+    Removed the SC backfill block. Now only does the Shopify reconciliation.
+    Should finish in <5s every time.
 
-NEW (4):
-  app/api/admin/backfill-abandoned-carts/route.ts               manual carts backfill
-  app/api/cron/poll-abandoned-carts/route.ts                    scheduled carts poll
-  .github/workflows/poll-abandoned-carts.yml                    GH Actions — every 2h
-  .github/workflows/check-late-fulfillments.yml                 GH Actions — every 6h
+NEW (2):
+  app/api/cron/backfill-sc-ids/route.ts
+    Dedicated SC backfill endpoint with an adaptive page budget — starts
+    with the targeted lookup (fast when SC respects filters), then falls
+    back to pagination with only as many pages as the remaining time
+    allows. At 18s/page observed on Autososs, that's typically 3 pages.
 
-HOUSEKEEPING DELETES (do by hand):
-  app/api/admin/backfill-drafts/backfill-customer-names-route.ts
-  app/api/admin/backfill-drafts/backfill-sc-ids-route.ts
+  .github/workflows/backfill-sc-ids.yml
+    Runs every 2h at :45 past. Staggered from the other two (:15) to
+    avoid hammering Vercel at the same minute.
 
-GITHUB SECRETS REQUIRED (one-time setup in repo Settings → Secrets → Actions):
-  CRON_SECRET    — same value as in Vercel env vars
-  APP_URL        — https://your-app.vercel.app  (no trailing slash)
+NO ACTION NEEDED on vercel.json — it still pings check-late-fulfillments
+once daily as a backup, and that endpoint is now safe.
 
 AFTER COMMIT:
-  Push to main. GitHub Actions picks up the workflow files within a minute.
-  Tab: Actions. You'll see both cron jobs listed. Click one → "Run workflow"
-  to fire it manually the first time and confirm it works. After that GH
-  runs them on the schedule automatically.
+  1. Push to main
+  2. GitHub Actions → Backfill Sellercloud IDs → Run workflow (confirm 200)
+  3. Re-run the failed "Check late fulfillments" workflow — should be green
+     in ~2s now that the SC walk is out of its way.
 
-  If a run fails, GitHub emails you by default (inherits notification
-  preferences from your account). The `exit 1` on non-200 status ensures
-  HTTP failures surface as red-X workflow runs.
+NOTES ON AUTOSOSS SPECIFICALLY:
+  Your Vercel log showed 18s per SC page. At that speed:
+    - 3 pages per run = 750 SC orders scanned
+    - 12 runs/day = 9,000 SC orders scanned daily
+  That's roughly a week's worth of orders. If SC import lag is shorter
+  than that, you'll catch everything. If not, click /health → Backfill
+  Sellercloud IDs to kick a manual run.
+
+  The real fix is upstream: SC support should not have that endpoint
+  taking 18s. If possible, open a ticket with them about
+  /rest/api/Orders list performance on your instance. Even fixing it to
+  1s per page would let a single run scan the whole backlog in seconds.
