@@ -19,20 +19,20 @@ type Row = DraftFollowupRow & { _err?: string }
 type TabId = 'needs_followup' | 'waiting'
 
 const TABS: Array<{ id: TabId; label: string; hint: string }> = [
-  { id: 'needs_followup', label: 'Needs follow-up', hint: 'No email, SMS, or call logged yet' },
+  { id: 'needs_followup', label: 'Needs follow-up', hint: 'No SMS or call logged yet' },
   { id: 'waiting', label: 'Waiting', hint: 'Follow-up logged. Waiting on customer.' },
 ]
 
 /**
  * Spreadsheet-style follow-up editor for a single rep's invoiced drafts.
  *
- * Columns: Invoice # · Amount · Phone · Date Created · SMS · SMS Date ·
- *          Phone · Phone Date · Richpanel · Notes · Actions
+ * Columns: Invoice # · Amount · Email · Phone # · Date Created · SMS ·
+ *          SMS Date · Phone · Phone Date · Richpanel · Notes · Actions
  *
- * Note: Email column deliberately absent. Shopify Flow "Draft Auto Reply"
- * sends invoice emails automatically on a weekly schedule (tagging drafts
- * invoice-sent:1, invoice-sent:2 as each round goes out), so there's
- * nothing for a rep to track there.
+ * Email is shown as a mailto: link so reps can copy or click through without
+ * leaving the dashboard. The actual email invoice sending is still handled by
+ * Shopify Flow "Draft Auto Reply" on a weekly schedule (invoice-sent:1/:2 tags),
+ * so there's no email follow-up checkbox — just the address for reference.
  *
  * Two tabs:
  *  - Needs follow-up: no SMS or phone call logged yet
@@ -42,7 +42,7 @@ const TABS: Array<{ id: TabId; label: string; hint: string }> = [
  *  - Drafts that Shopify converted to a real order (converted_order_id set)
  *  - Drafts the rep manually closed out (can_delete = true)
  *  - Drafts with service tags (sdss / install / rebuild / shock service)
- *  - Anything older than 60 days
+ *  - Anything older than 30 days
  *
  * Every change POSTs to /api/actions/draft-followup. The UI updates
  * optimistically and reverts on error.
@@ -121,6 +121,7 @@ export function DraftFollowupTable({
               <tr>
                 <th>Invoice #</th>
                 <th>Amount</th>
+                <th>Email</th>
                 <th>Phone #</th>
                 <th>Date Created</th>
                 <th title="SMS follow-up">SMS</th>
@@ -129,7 +130,7 @@ export function DraftFollowupTable({
                 <th>Phone Date</th>
                 <th>Richpanel</th>
                 <th>Notes</th>
-                <th title="Chase again (clears follow-ups) or close out">Actions</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -143,8 +144,8 @@ export function DraftFollowupTable({
 
       <div className="dfu-hint">
         Converted drafts disappear automatically when Shopify reports them as orders.
-        Use <b>↻</b> to chase again (clears follow-ups) or the <b>Close Out</b> checkbox to
-        remove a draft that won&rsquo;t convert.
+        Use <b>↻ Chase</b> to clear follow-ups and chase again, or <b>✕ Close</b> to
+        hide a draft that won&rsquo;t convert.
       </div>
     </>
   )
@@ -157,10 +158,9 @@ function isNeedsFollowup(r: DraftFollowupRow): boolean {
 }
 
 function hasAnyFollowup(r: DraftFollowupRow): boolean {
-  // Note: email_followup is ignored here. Shopify Flow sends invoices
-  // automatically on a weekly schedule (see invoice-sent:1 / :2 tags) —
-  // a rep doesn't log "I emailed them," so only SMS and Phone, which
-  // the rep actually drives, determine tab placement.
+  // Shopify Flow sends invoices automatically on a weekly schedule (see
+  // invoice-sent:1 / :2 tags) — a rep doesn't log "I emailed them," so only
+  // SMS and Phone, which the rep actually drives, determine tab placement.
   return r.sms_followup || r.phone_followup
 }
 
@@ -227,6 +227,7 @@ function DraftRow({
   storeDomain: string | null
 }) {
   const draftUrl = storeDomain ? `https://${storeDomain}/admin/draft_orders/${row.id}` : null
+  const waiting = hasAnyFollowup(row)
 
   return (
     <tr className={row._err ? 'dfu-err' : undefined}>
@@ -240,9 +241,24 @@ function DraftRow({
         )}
       </td>
       <td className="dfu-amt">{formatMoney(row.total_price)}</td>
-      <td className="dfu-phone">{row.customer_phone ?? '(blank)'}</td>
+      <td className="dfu-email">
+        {row.customer_email ? (
+          <a
+            href={`mailto:${row.customer_email}`}
+            className="dfu-email-link"
+            title={row.customer_email}
+          >
+            {row.customer_email}
+          </a>
+        ) : (
+          <span className="dfu-blank">(blank)</span>
+        )}
+      </td>
+      <td className="dfu-phone">
+        {row.customer_phone ?? <span className="dfu-blank">(blank)</span>}
+      </td>
       <td className="dfu-date">{fmtDate(row.shopify_created_at)}</td>
-      <td>
+      <td className="dfu-check">
         <input
           type="checkbox"
           checked={row.sms_followup}
@@ -250,7 +266,7 @@ function DraftRow({
         />
       </td>
       <td className="dfu-date">{fmtDate(row.sms_date)}</td>
-      <td>
+      <td className="dfu-check">
         <input
           type="checkbox"
           checked={row.phone_followup}
@@ -290,29 +306,40 @@ function DraftRow({
       </td>
       <td>
         <div className="dfu-actions">
-          {hasAnyFollowup(row) && (
+          {waiting && (
             <button
-              className="dfu-chase"
+              type="button"
+              className="btn-sm dfu-btn-chase"
               onClick={() => {
                 if (
                   confirm(
-                    `Chase ${row.name} again? This clears the Email/SMS/Phone checkmarks and dates so you can log new follow-ups.`,
+                    `Chase ${row.name} again? This clears the SMS and Phone checkmarks and dates so you can log a new round of follow-ups.`,
                   )
                 ) {
                   onChange(row.id, 'reset_followups', true)
                 }
               }}
-              title="Chase again (clears follow-up checkmarks)"
+              title="Clear follow-ups so you can chase this draft again"
             >
-              ↻
+              ↻ Chase
             </button>
           )}
-          <input
-            type="checkbox"
-            checked={row.can_delete}
-            onChange={(e) => onChange(row.id, 'can_delete', e.target.checked)}
-            title="Close out: hide this draft permanently"
-          />
+          <button
+            type="button"
+            className="btn-sm dfu-btn-close"
+            onClick={() => {
+              if (
+                confirm(
+                  `Close out ${row.name}? This hides the draft permanently. Use for phone/check sales (paid outside Shopify) or dead leads.`,
+                )
+              ) {
+                onChange(row.id, 'can_delete', true)
+              }
+            }}
+            title="Hide this draft permanently"
+          >
+            ✕ Close
+          </button>
         </div>
       </td>
     </tr>
