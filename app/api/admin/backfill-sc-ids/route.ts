@@ -53,7 +53,7 @@ async function run(req: NextRequest) {
             AND (
               ((fulfillment_status IS NULL OR fulfillment_status != 'fulfilled')
                AND shopify_created_at < NOW() - INTERVAL '3 days'
-               AND shopify_created_at > NOW() - INTERVAL '90 days')
+               AND shopify_created_at > NOW() - INTERVAL '14 days')
               OR
               (is_vip = TRUE AND shopify_created_at > NOW() - INTERVAL '7 days')
             )
@@ -126,7 +126,7 @@ async function run(req: NextRequest) {
             AND (
               ((fulfillment_status IS NULL OR fulfillment_status != 'fulfilled')
                AND shopify_created_at < NOW() - INTERVAL '3 days'
-               AND shopify_created_at > NOW() - INTERVAL '90 days')
+               AND shopify_created_at > NOW() - INTERVAL '14 days')
               OR
               (is_vip = TRUE AND shopify_created_at > NOW() - INTERVAL '7 days')
             )
