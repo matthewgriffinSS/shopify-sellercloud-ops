@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
 
   try {
     result = await backfillScOrderIds({
-      scope: 'dashboard',
+      scope: 'all_recent',
       maxPages: 15,
     })
   } catch (err) {
