@@ -29,14 +29,26 @@ const ActionSchema = z.object({
 
 /**
  * Called by the dashboard's action form / row buttons. Does three things:
- *   1. (Best-effort) posts the note / shipment to Sellercloud IF the order
- *      has a SC link cached. Missing SC link is NOT an error — most orders
- *      don't have one and that's fine; the action is logged locally.
+ *   1. (Best-effort) posts the note / shipment to Sellercloud IF the action
+ *      actually needs SC AND the order has a SC link cached. Missing SC
+ *      link is NOT an error — most orders don't have one and that's fine;
+ *      the action is logged locally.
  *   2. Records the action in processing_actions (this is what drives the
  *      "Processed" status on the dashboard, and the inline note display).
  *   3. Returns ok/scError.
  *
- * scError is now only set when an SC call was actually attempted and failed,
+ * Only actions that genuinely need SC trigger a SC call:
+ *   - mark_fulfilled + tracking → createShipment
+ *   - any action with a note    → addOrderNote
+ *
+ * A bare mark_processed (or escalate / release_hold) is a LOCAL status
+ * change and never touches SC. Previously we called findScOrderByShopifyId
+ * unconditionally for every `order` action, which meant a flaky SC API
+ * could poison the processing_actions row with sellercloud_error and
+ * cause handled orders to reappear on refresh (the fetch queries
+ * exclude rows where sellercloud_error IS NULL).
+ *
+ * scError is only set when an SC call was actually attempted and failed,
  * not when SC simply doesn't have the order. That way, hitting "Save note"
  * on a freshly-imported order without an SC link no longer surfaces a
  * confusing "No Sellercloud order found" error to the rep — it just saves
@@ -53,8 +65,15 @@ export async function POST(req: NextRequest) {
   let scNoteId: string | null = null
   let scError: string | null = null
 
+  // Only touch SC if this particular action actually needs it. Local-only
+  // status changes (mark_processed, escalate, release_hold with no note)
+  // must not be gated on SC health.
+  const needsSc =
+    input.resourceType === 'order' &&
+    ((input.actionType === 'mark_fulfilled' && !!input.tracking) || !!input.note)
+
   try {
-    if (input.resourceType === 'order') {
+    if (needsSc) {
       const scOrder = await findScOrderByShopifyId(input.resourceId)
       if (scOrder) {
         // Only attempt SC operations if we have a link.
