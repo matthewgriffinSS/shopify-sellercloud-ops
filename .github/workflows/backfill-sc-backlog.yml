@@ -1,0 +1,50 @@
+name: One-shot SC backlog backfill
+
+# Manual-only. Click "Run workflow" from the Actions tab.
+# This bypasses the Vercel 60s serverless cap so it can walk SC deep enough
+# to reach the existing backlog. Delete this workflow (and the script) once
+# the backlog is cleared — the regular /api/cron/backfill-sc-ids cron
+# handles ongoing matching.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (log matches, do not write)'
+        type: boolean
+        default: true
+      max_pages:
+        description: 'Max SC pages to walk'
+        type: string
+        default: '500'
+      days_back:
+        description: 'How many days back to pull unlinked candidates'
+        type: string
+        default: '90'
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps
+        run: |
+          npm ci
+          npm install -D tsx
+
+      - name: Run backlog backfill
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SELLERCLOUD_API_URL: ${{ secrets.SELLERCLOUD_API_URL }}
+          SELLERCLOUD_USERNAME: ${{ secrets.SELLERCLOUD_USERNAME }}
+          SELLERCLOUD_PASSWORD: ${{ secrets.SELLERCLOUD_PASSWORD }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+          MAX_PAGES: ${{ inputs.max_pages }}
+          DAYS_BACK: ${{ inputs.days_back }}
+          PAGE_PAUSE_MS: '500'
+        run: npx tsx scripts/backfill-sc-backlog.ts
