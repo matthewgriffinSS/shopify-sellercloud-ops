@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
   try {
     result = await backfillScOrderIds({
       scope: 'dashboard',
-      maxPages: 20,
+      maxPages: 15,
     })
   } catch (err) {
     error = err instanceof Error ? err.message : String(err)
