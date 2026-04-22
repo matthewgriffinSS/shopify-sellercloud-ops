@@ -796,72 +796,166 @@ tr.grand-total td {
 .rep-link:hover { color: inherit; }
 
 /* ===== Draft follow-up table (DraftFollowupTable.tsx) ===== */
-.dfu-wrap { overflow-x: auto; margin-top: 8px; }
+
+/* Tabs above the table */
+.dfu-tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.dfu-tab {
+  background: transparent;
+  border: none;
+  color: var(--text2);
+  padding: 10px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: -1px;
+}
+.dfu-tab:hover { color: var(--text); }
+.dfu-tab-on {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.dfu-tab-ct {
+  background: var(--bg3);
+  color: var(--text2);
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 18px;
+  text-align: center;
+}
+.dfu-tab-on .dfu-tab-ct {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* Wrapper: handles horizontal scroll on narrow screens + the card-like border */
+.dfu-wrap {
+  overflow-x: auto;
+  margin-top: 8px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+/* Table itself — matches the main .tbl aesthetic (12px body, 10px headers,
+   generous padding, accent-colored header row). */
 .dfu-tbl {
   width: 100%;
   border-collapse: collapse;
-  font-size: 11px;
-  table-layout: fixed;
+  font-size: 12px;
 }
 .dfu-tbl thead th {
   text-align: left;
-  padding: 8px 6px;
-  font-size: 9px;
+  padding: 11px 12px;
+  font-size: 10px;
   font-weight: 700;
   color: var(--accent);
   background: var(--bg3);
   border-bottom: 2px solid var(--accent);
   text-transform: uppercase;
-  letter-spacing: 0.8px;
+  letter-spacing: 1px;
   white-space: nowrap;
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .dfu-tbl tbody td {
-  padding: 6px 6px;
+  padding: 10px 12px;
+  font-size: 12px;
   border-bottom: 1px solid var(--bg3);
   vertical-align: middle;
   color: var(--text);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
+.dfu-tbl tbody tr:last-child td { border-bottom: none; }
 .dfu-tbl tbody tr:hover td { background: var(--bg3); }
 .dfu-tbl tbody tr.dfu-err td { background: var(--danger-bg); }
 
-/* Column widths. Fixed columns sum to about 600px; Richpanel + Notes flex
-   to fill the rest (Notes gets the larger share). */
-.dfu-tbl th:nth-child(1)  { width: 72px;  } /* Invoice # */
-.dfu-tbl th:nth-child(2)  { width: 70px;  } /* Amount */
-.dfu-tbl th:nth-child(3)  { width: 110px; } /* Phone # */
-.dfu-tbl th:nth-child(4)  { width: 72px;  } /* Date Created */
-.dfu-tbl th:nth-child(5)  { width: 42px;  } /* SMS */
-.dfu-tbl th:nth-child(6)  { width: 72px;  } /* SMS Date */
-.dfu-tbl th:nth-child(7)  { width: 52px;  } /* Phone */
-.dfu-tbl th:nth-child(8)  { width: 72px;  } /* Phone Date */
-.dfu-tbl th:nth-child(9)  { width: 22%;   } /* Richpanel — flex */
-.dfu-tbl th:nth-child(10) { width: auto;  } /* Notes — fills remainder */
-.dfu-tbl th:nth-child(11) { width: 76px;  } /* Actions */
+/* Column width hints. Total ~1530px — on wider screens everything fits;
+   on narrower screens .dfu-wrap scrolls horizontally. */
+.dfu-tbl th:nth-child(1)  { width: 80px;  } /* Invoice # */
+.dfu-tbl th:nth-child(2)  { width: 80px;  } /* Amount */
+.dfu-tbl th:nth-child(3)  { width: 220px; } /* Email */
+.dfu-tbl th:nth-child(4)  { width: 130px; } /* Phone # */
+.dfu-tbl th:nth-child(5)  { width: 100px; } /* Date Created */
+.dfu-tbl th:nth-child(6)  { width: 55px;  } /* SMS */
+.dfu-tbl th:nth-child(7)  { width: 100px; } /* SMS Date */
+.dfu-tbl th:nth-child(8)  { width: 65px;  } /* Phone */
+.dfu-tbl th:nth-child(9)  { width: 100px; } /* Phone Date */
+.dfu-tbl th:nth-child(10) { width: 200px; } /* Richpanel */
+.dfu-tbl th:nth-child(11) { width: 240px; } /* Notes */
+.dfu-tbl th:nth-child(12) { width: 160px; } /* Actions */
 
-.dfu-inv { font-family: var(--font-mono); color: var(--text); font-size: 11px; }
-.dfu-phone { color: var(--text2); font-family: var(--font-mono); font-size: 11px; }
-.dfu-date { color: var(--text3); font-family: var(--font-mono); font-size: 11px; }
-.dfu-errmsg { color: var(--danger-text); font-size: 10px; margin-top: 2px; white-space: normal; }
+/* Cell-type helpers */
+.dfu-inv { font-family: var(--font-mono); color: var(--text); }
+.dfu-inv-link {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+.dfu-inv-link:hover {
+  color: var(--accent2);
+  text-decoration: underline;
+}
+.dfu-amt {
+  color: var(--green);
+  font-weight: 600;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.dfu-email {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dfu-email-link {
+  color: var(--text);
+  text-decoration: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.dfu-email-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.dfu-phone { color: var(--text2); font-family: var(--font-mono); }
+.dfu-date { color: var(--text3); font-family: var(--font-mono); }
+.dfu-blank {
+  color: var(--text3);
+  font-style: italic;
+  font-size: 11px;
+}
+.dfu-check { text-align: center; }
+.dfu-errmsg {
+  color: var(--danger-text);
+  font-size: 10px;
+  margin-top: 2px;
+  white-space: normal;
+}
 .dfu-link { margin-left: 4px; color: var(--accent); font-weight: 600; }
 
+/* Inline inputs (Richpanel URL, Notes) */
 .dfu-input {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 4px;
   color: var(--text);
-  padding: 4px 6px;
-  font-size: 11px;
+  padding: 5px 8px;
+  font-size: 12px;
   width: 100%;
   min-width: 0;
   transition: border-color 0.15s;
+  font-family: var(--font-body);
 }
 .dfu-input:focus {
   outline: none;
@@ -871,10 +965,48 @@ tr.grand-total td {
 .dfu-input::placeholder { color: var(--text3); }
 
 .dfu-tbl input[type='checkbox'] {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   accent-color: var(--accent);
   cursor: pointer;
+}
+
+/* Richpanel cell: input stretches to fill, arrow pins to the right */
+.dfu-link-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.dfu-link-cell .dfu-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Actions column: two labeled buttons sharing the .btn-sm style */
+.dfu-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-start;
+}
+.dfu-actions .btn-sm {
+  padding: 4px 9px;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+/* Chase keeps the default .btn-sm hover (accent orange) */
+.dfu-btn-chase:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(232, 93, 36, 0.08);
+}
+/* Close hovers red to telegraph that it's destructive-ish (hides the row) */
+.dfu-btn-close:hover {
+  border-color: var(--red);
+  color: var(--red);
+  background: rgba(255, 69, 58, 0.08);
 }
 
 .dfu-hint {
