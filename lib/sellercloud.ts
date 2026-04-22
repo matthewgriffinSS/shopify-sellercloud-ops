@@ -302,24 +302,25 @@ export async function backfillScOrderIdsTargeted(options: {
   const limit = options.limit ?? 25
   const scope = options.scope ?? 'dashboard'
 
-  const candidates =
-    scope === 'dashboard'
-      ? await sql<
-          { id: string; order_number: string; raw_payload: any }[]
-        >`
-          SELECT id::text, order_number, raw_payload
-          FROM shopify_orders
-          WHERE sellercloud_order_id IS NULL
-            AND (
-              ((fulfillment_status IS NULL OR fulfillment_status != 'fulfilled')
-               AND shopify_created_at < NOW() - INTERVAL '3 days'
-               AND shopify_created_at > NOW() - INTERVAL '90 days')
-              OR
-              (is_vip = TRUE AND shopify_created_at > NOW() - INTERVAL '7 days')
-            )
-          ORDER BY shopify_created_at DESC
-          LIMIT ${limit}
-        `
+      const candidates =
+      scope === 'dashboard'
+        ? await sql<
+            { id: string; order_number: string; raw_payload: any }[]
+          >`
+            SELECT id::text, order_number, raw_payload
+            FROM shopify_orders
+            WHERE sellercloud_order_id IS NULL
+              AND (
+                ((fulfillment_status IS NULL OR fulfillment_status != 'fulfilled')
+                 AND shopify_created_at < NOW() - INTERVAL '3 days'
+                 AND shopify_created_at > NOW() - INTERVAL '14 days')
+                OR
+                (is_vip = TRUE AND shopify_created_at > NOW() - INTERVAL '7 days')
+              )
+            ORDER BY shopify_created_at DESC
+            LIMIT ${limit}
+          `
+
       : await sql<
           { id: string; order_number: string; raw_payload: any }[]
         >`
@@ -376,7 +377,7 @@ export async function backfillScOrderIdsTargeted(options: {
             AND (
               ((fulfillment_status IS NULL OR fulfillment_status != 'fulfilled')
                AND shopify_created_at < NOW() - INTERVAL '3 days'
-               AND shopify_created_at > NOW() - INTERVAL '90 days')
+               AND shopify_created_at > NOW() - INTERVAL '14 days')
               OR
               (is_vip = TRUE AND shopify_created_at > NOW() - INTERVAL '7 days')
             )
@@ -421,20 +422,21 @@ export async function backfillScOrderIds(options: {
   const scope = options.scope ?? 'dashboard'
   const maxPages = options.maxPages ?? 40
 
-  const candidates =
-    scope === 'dashboard'
-      ? await sql<{ id: string; order_number: string; raw_payload: any; shopify_created_at: Date }[]>`
-          SELECT id::text, order_number, raw_payload, shopify_created_at
-          FROM shopify_orders
-          WHERE sellercloud_order_id IS NULL
-            AND (
-              ((fulfillment_status IS NULL OR fulfillment_status != 'fulfilled')
-               AND shopify_created_at < NOW() - INTERVAL '3 days'
-               AND shopify_created_at > NOW() - INTERVAL '90 days')
-              OR
-              (is_vip = TRUE AND shopify_created_at > NOW() - INTERVAL '7 days')
-            )
-        `
+    const candidates =
+      scope === 'dashboard'
+        ? await sql<{ id: string; order_number: string; raw_payload: any; shopify_created_at: Date }[]>`
+            SELECT id::text, order_number, raw_payload, shopify_created_at
+            FROM shopify_orders
+            WHERE sellercloud_order_id IS NULL
+              AND (
+                ((fulfillment_status IS NULL OR fulfillment_status != 'fulfilled')
+                 AND shopify_created_at < NOW() - INTERVAL '3 days'
+                 AND shopify_created_at > NOW() - INTERVAL '14 days')
+                OR
+                (is_vip = TRUE AND shopify_created_at > NOW() - INTERVAL '7 days')
+              )
+          `
+
       : await sql<{ id: string; order_number: string; raw_payload: any; shopify_created_at: Date }[]>`
           SELECT id::text, order_number, raw_payload, shopify_created_at
           FROM shopify_orders
