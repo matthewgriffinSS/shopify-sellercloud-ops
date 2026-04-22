@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { formatMoney, timeAgo } from './shared'
+import { confirmDialog } from './ConfirmDialog'
 
 /**
  * Client-side grid for abandoned carts. Same pattern as OrdersTable:
@@ -65,9 +66,13 @@ export function AbandonedCartsGrid({
 
   async function markHandled(cart: CartRow) {
     const who = cart.customer_email ?? cart.customer_name ?? 'this cart'
-    const ok = window.confirm(
-      `Mark cart handled?\n\n${who} — ${formatMoney(cart.total_price)}\n\nIt will disappear from the dashboard.`,
-    )
+    const ok = await confirmDialog({
+      title: 'Mark cart handled?',
+      message:
+        `${who} — ${formatMoney(cart.total_price)}\n\n` +
+        'It will disappear from the dashboard.',
+      confirmLabel: '✓ Mark handled',
+    })
     if (!ok) return
 
     const previousRows = rows

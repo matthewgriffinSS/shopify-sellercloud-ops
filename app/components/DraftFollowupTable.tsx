@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import type { DraftFollowupRow } from '@/lib/queries'
 import { formatMoney } from './shared'
+import { confirmDialog } from './ConfirmDialog'
 
 type Field =
   | 'email_followup'
@@ -310,14 +311,16 @@ function DraftRow({
             <button
               type="button"
               className="btn-sm dfu-btn-chase"
-              onClick={() => {
-                if (
-                  confirm(
-                    `Chase ${row.name} again? This clears the SMS and Phone checkmarks and dates so you can log a new round of follow-ups.`,
-                  )
-                ) {
-                  onChange(row.id, 'reset_followups', true)
-                }
+              onClick={async () => {
+                const ok = await confirmDialog({
+                  title: `Chase ${row.name} again?`,
+                  message:
+                    'This clears the SMS and Phone checkmarks and dates so you ' +
+                    'can log a new round of follow-ups. The draft returns to the ' +
+                    'Needs follow-up tab.',
+                  confirmLabel: '↻ Chase',
+                })
+                if (ok) onChange(row.id, 'reset_followups', true)
               }}
               title="Clear follow-ups so you can chase this draft again"
             >
@@ -327,14 +330,16 @@ function DraftRow({
           <button
             type="button"
             className="btn-sm dfu-btn-close"
-            onClick={() => {
-              if (
-                confirm(
-                  `Close out ${row.name}? This hides the draft permanently. Use for phone/check sales (paid outside Shopify) or dead leads.`,
-                )
-              ) {
-                onChange(row.id, 'can_delete', true)
-              }
+            onClick={async () => {
+              const ok = await confirmDialog({
+                title: `Close out ${row.name}?`,
+                message:
+                  'This hides the draft permanently. Use for phone/check sales ' +
+                  '(paid outside Shopify) or dead leads.',
+                confirmLabel: '✕ Close out',
+                destructive: true,
+              })
+              if (ok) onChange(row.id, 'can_delete', true)
             }}
             title="Hide this draft permanently"
           >

@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { daysAgo, formatMoney } from './shared'
+import { confirmDialog } from './ConfirmDialog'
 
 /**
  * Single shared client-side table used by LateFulfillments and VipOrders.
@@ -69,9 +70,13 @@ export function OrdersTable({
   }
 
   async function markHandled(row: OrderRow) {
-    const ok = window.confirm(
-      `Mark order #${row.order_number} handled?\n\nIt will disappear from both the Late and VIP tables.`,
-    )
+    const ok = await confirmDialog({
+      title: `Mark #${row.order_number} handled?`,
+      message:
+        'This order will disappear from both the Late and VIP tables. ' +
+        'You can undo by deleting the processing_actions row in the DB.',
+      confirmLabel: '✓ Mark handled',
+    })
     if (!ok) return
 
     // Optimistic: yank the row immediately.
