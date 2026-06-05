@@ -152,21 +152,6 @@ export async function fetchStaleUnfulfilledOrders(daysOld: number) {
   return shopifyRequest<{ orders: ShopifyOrder[] }>(`/orders.json?${params.toString()}`)
 }
 
-// Minimal Shopify order shape we actually read in this app.
-export type ShopifyOrder = {
-  id: number
-  order_number: number
-  email: string | null
-  total_price: string
-  currency: string
-  financial_status: string | null
-  fulfillment_status: string | null
-  source_name: string | null
-  tags: string // comma-separated
-  created_at: string
-  customer: { first_name: string | null; last_name: string | null } | null
-}
-
 /**
  * Fetch all orders created in the last `daysBack` days (any status), paginated.
  * Used by the consolidated sync cron to mirror new and VIP orders. Unlike
@@ -199,4 +184,19 @@ export async function fetchRecentOrders(daysBack: number): Promise<ShopifyOrder[
   }
 
   return orders
+}
+
+// Minimal Shopify order shape we actually read in this app.
+export type ShopifyOrder = {
+  id: number
+  order_number: number
+  email: string | null
+  total_price: string
+  currency: string
+  financial_status: string | null
+  fulfillment_status: string | null
+  source_name: string | null
+  tags: string // comma-separated
+  created_at: string
+  customer: { first_name: string | null; last_name: string | null } | null
 }
