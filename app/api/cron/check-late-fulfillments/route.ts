@@ -20,11 +20,6 @@ export const maxDuration = 60
  *   2. GitHub Actions (.github/workflows/check-late-fulfillments.yml) every 6h
  *   3. Manual "Run now" button on /health (uses dashboard auth)
  *
- * Note: SC ID backfill USED to run here too, but Autososs's /api/Orders
- * endpoint is unpredictably slow (seen 18s per page). It kept timing out
- * the combined job. SC backfill now runs as its own cron hitting
- * /api/admin/backfill-sc-ids, which has its own wall-clock budget and
- * can't take down the late-fulfillment job when SC is having a bad day.
  */
 export async function GET(req: NextRequest) {
   const auth = req.headers.get('authorization')

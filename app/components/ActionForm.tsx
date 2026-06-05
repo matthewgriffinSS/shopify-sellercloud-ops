@@ -44,17 +44,10 @@ export function ActionForm({ resourceType, resourceId, resourceLabel, actions, o
 
   // Carts and drafts: no Sellercloud involved, so neutral labels.
   // Orders: keep SC language since the note actually lands in Sellercloud.
-  const hasSellercloud = resourceType === 'order'
-  const noteLabel = hasSellercloud ? 'SC note' : 'Note'
-  const notePlaceholder = hasSellercloud
-    ? 'Optional note that will appear on the Sellercloud order'
-    : 'Optional note (logged in the dashboard only)'
-  const submitLabel = hasSellercloud ? 'Submit to SC ↗' : 'Save'
-  const contextText = hasSellercloud
-    ? 'Posts a note on the linked Sellercloud order and records the action in this dashboard.'
-    : resourceType === 'draft_order'
-      ? 'Records the action in this dashboard. Drafts only exist in Shopify — nothing is posted elsewhere.'
-      : 'Records the action in this dashboard. Abandoned carts only exist in Shopify until a customer completes checkout — nothing is posted to Sellercloud.'
+const noteLabel = 'Note'
+const notePlaceholder = 'Optional note (logged in the dashboard only)'
+const submitLabel = 'Save'
+const contextText = 'Records the action in this dashboard.'
 
   async function submit() {
     setSubmitting(true)

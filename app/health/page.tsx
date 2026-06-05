@@ -20,11 +20,6 @@ const SERVICES: Record<
     description: 'Powers webhooks and the late-fulfillment cron job.',
     fix: 'If this fails: double-check SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET, and SHOPIFY_STORE_DOMAIN. The app must be a custom distribution app installed on the store.',
   },
-  sellercloud: {
-    label: 'Sellercloud REST API',
-    description: 'Where order notes and shipments are posted when reps take action.',
-    fix: 'If this fails: verify SELLERCLOUD_API_URL ends with /rest, and that the SC user has API access enabled.',
-  },
 }
 
 /**
@@ -169,26 +164,6 @@ export default function HealthPage() {
       setNamesError(err instanceof Error ? err.message : 'Failed')
     } finally {
       setNamesRunning(false)
-    }
-  }, [])
-
-  // --- Backfill Sellercloud IDs state ---
-  const [scRunning, setScRunning] = useState(false)
-  const [scResult, setScResult] = useState<any>(null)
-  const [scError, setScError] = useState<string | null>(null)
-
-  const backfillSellercloudIds = useCallback(async () => {
-    setScRunning(true)
-    setScResult(null)
-    setScError(null)
-    try {
-      const data = await fetchJson('/api/admin/backfill-sc-ids', { method: 'POST' })
-      if (!data.ok) setScError(data.error || 'Failed')
-      else setScResult(data)
-    } catch (err) {
-      setScError(err instanceof Error ? err.message : 'Failed')
-    } finally {
-      setScRunning(false)
     }
   }, [])
 
@@ -642,64 +617,6 @@ export default function HealthPage() {
               }}
             >
               {namesError}
-            </div>
-          )}
-        </div>
-
-        {/* Sellercloud IDs */}
-        <div className="card" style={{ marginBottom: 0 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 500, margin: '0 0 6px' }}>
-            Sellercloud order IDs
-          </h3>
-          <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 12px' }}>
-            Looks up the Sellercloud order ID for each late-fulfillment and VIP order that doesn't
-            have one yet, and stores it so the dashboard can link directly to the SC order detail
-            page. Processes up to 100 orders per run — if "remaining" is non-zero, just click again.
-          </p>
-          <button className="btn-sm" onClick={backfillSellercloudIds} disabled={scRunning}>
-            {scRunning ? 'Running…' : 'Backfill Sellercloud IDs'}
-          </button>
-          {scResult && (
-            <div
-              style={{
-                fontSize: 12,
-                padding: '8px 10px',
-                borderRadius: 'var(--radius-md)',
-                background: scResult.errors > 0 ? 'var(--danger-bg)' : 'var(--success-bg)',
-                color:
-                  scResult.errors > 0 ? 'var(--danger-text)' : 'var(--success-text)',
-                fontFamily: 'var(--font-mono)',
-                marginTop: 10,
-              }}
-            >
-              Checked {scResult.checked}: found {scResult.found}, not found {scResult.notFound},
-              errors {scResult.errors}. {scResult.remaining} remaining.
-              {scResult.errorDetails && scResult.errorDetails.length > 0 && (
-                <div style={{ marginTop: 8, fontSize: 11, opacity: 0.85 }}>
-                  First errors:
-                  {scResult.errorDetails.slice(0, 3).map((e: any, i: number) => (
-                    <div key={i}>
-                      • #{e.orderNumber}: {e.error}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          {scError && (
-            <div
-              style={{
-                fontSize: 12,
-                padding: '8px 10px',
-                borderRadius: 'var(--radius-md)',
-                background: 'var(--danger-bg)',
-                color: 'var(--danger-text)',
-                fontFamily: 'var(--font-mono)',
-                marginTop: 10,
-                wordBreak: 'break-word',
-              }}
-            >
-              {scError}
             </div>
           )}
         </div>

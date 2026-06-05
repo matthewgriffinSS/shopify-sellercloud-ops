@@ -15,7 +15,6 @@ CREATE TABLE IF NOT EXISTS shopify_orders (
   is_vip                BOOLEAN DEFAULT FALSE,
   assigned_rep          TEXT,
   service_type          TEXT,
-  sellercloud_order_id  TEXT,
   raw_payload           JSONB,
   shopify_created_at    TIMESTAMPTZ NOT NULL,
   created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -85,8 +84,6 @@ CREATE TABLE IF NOT EXISTS processing_actions (
   action_type           TEXT NOT NULL,  -- 'mark_fulfilled' | 'add_note' | 'escalate' | 'release_hold' | 'mark_processed' | 'contacted' | 'recovery_email_sent'
   actor                 TEXT,           -- which user took the action
   payload               JSONB,          -- tracking #, note text, etc.
-  sellercloud_note_id   TEXT,           -- populated on successful SC post
-  sellercloud_error     TEXT,           -- error message if SC call failed
   created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_actions_resource ON processing_actions (resource_type, resource_id);
