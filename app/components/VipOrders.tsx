@@ -32,7 +32,6 @@ export async function VipOrders() {
         initialNotes={notes}
         initialInProgress={inProgress}
         storeDomain={process.env.SHOPIFY_STORE_DOMAIN ?? null}
-        scAdminUrl={process.env.SELLERCLOUD_ADMIN_URL ?? null}
       />
     </div>
   )
