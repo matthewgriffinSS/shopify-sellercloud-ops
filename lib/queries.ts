@@ -23,7 +23,6 @@ export async function statusMapForResources(
     FROM processing_actions
     WHERE resource_type = ${resourceType}
       AND resource_id = ANY(${resourceIds})
-      AND sellercloud_error IS NULL
     ORDER BY resource_id, created_at DESC
   `
 
@@ -95,8 +94,7 @@ export async function fetchLateFulfillments() {
     }[]
   >`
     SELECT o.id::text, o.order_number, o.customer_name, o.total_price::text,
-           o.assigned_rep, o.service_type, o.shopify_created_at, o.tags,
-           o.sellercloud_order_id::text
+           o.assigned_rep, o.service_type, o.shopify_created_at, o.tags
     FROM shopify_orders o
     WHERE (o.fulfillment_status IS NULL OR o.fulfillment_status != 'fulfilled')
       AND o.shopify_created_at < NOW() - INTERVAL '3 days'
@@ -104,7 +102,6 @@ export async function fetchLateFulfillments() {
         SELECT 1 FROM processing_actions pa
         WHERE pa.resource_type = 'order'
           AND pa.resource_id = o.id::text
-          AND pa.sellercloud_error IS NULL
           AND pa.action_type IN ('mark_processed', 'mark_fulfilled', 'recovery_email_sent')
       )
     ORDER BY o.shopify_created_at ASC
@@ -131,8 +128,7 @@ export async function fetchVipOrders() {
     }[]
   >`
     SELECT o.id::text, o.order_number, o.customer_name, o.total_price::text,
-           o.assigned_rep, o.service_type, o.shopify_created_at, o.fulfillment_status, o.tags,
-           o.sellercloud_order_id::text
+           o.assigned_rep, o.service_type, o.shopify_created_at, o.fulfillment_status, o.tags
     FROM shopify_orders o
     WHERE o.is_vip = TRUE
       AND o.shopify_created_at > NOW() - INTERVAL '7 days'
@@ -140,7 +136,6 @@ export async function fetchVipOrders() {
         SELECT 1 FROM processing_actions pa
         WHERE pa.resource_type = 'order'
           AND pa.resource_id = o.id::text
-          AND pa.sellercloud_error IS NULL
           AND pa.action_type IN ('mark_processed', 'mark_fulfilled', 'recovery_email_sent')
       )
     ORDER BY o.shopify_created_at DESC
@@ -304,7 +299,6 @@ export async function fetchAbandonedCarts() {
         SELECT 1 FROM processing_actions pa
         WHERE pa.resource_type = 'abandoned_checkout'
           AND pa.resource_id = c.id::text
-          AND pa.sellercloud_error IS NULL
           AND pa.action_type IN ('recovery_email_sent', 'contacted', 'mark_processed')
       )
     ORDER BY c.abandoned_at DESC
@@ -322,7 +316,6 @@ export async function fetchMetrics() {
         SELECT 1 FROM processing_actions pa
         WHERE pa.resource_type = 'order'
           AND pa.resource_id = o.id::text
-          AND pa.sellercloud_error IS NULL
           AND pa.action_type IN ('mark_processed', 'mark_fulfilled', 'recovery_email_sent')
       )
   `
@@ -337,7 +330,6 @@ export async function fetchMetrics() {
         SELECT 1 FROM processing_actions pa
         WHERE pa.resource_type = 'abandoned_checkout'
           AND pa.resource_id = c.id::text
-          AND pa.sellercloud_error IS NULL
           AND pa.action_type IN ('recovery_email_sent', 'contacted', 'mark_processed')
       )
   `
@@ -346,8 +338,7 @@ export async function fetchMetrics() {
     SELECT COUNT(*)::text AS count
     FROM processing_actions
     WHERE created_at::date = CURRENT_DATE
-      AND action_type IN ('mark_fulfilled', 'mark_processed', 'recovery_email_sent')
-      AND sellercloud_error IS NULL
+      AND action_type IN ('mark_fulfilled', 'mark_processed', 'recovery_email_sent')  
   `
 
   const [vipMtd] = await sql<{ revenue: string; count: string }[]>`
@@ -363,7 +354,6 @@ export async function fetchMetrics() {
     JOIN shopify_orders o ON o.id::text = pa.resource_id
     WHERE pa.action_type IN ('mark_fulfilled', 'mark_processed')
       AND pa.created_at > NOW() - INTERVAL '7 days'
-      AND pa.sellercloud_error IS NULL
   `
 
   return {
