@@ -1,0 +1,33 @@
+name: Shopify sync
+
+# One consolidated run replaces the old late-fulfillments + abandoned-carts crons.
+# GitHub Actions cron is always UTC. 11–23 UTC every 2h ≈ 7am–7pm US Eastern
+# during EDT (summer); in winter (EST) it shifts to ~6am–6pm. Adjust the hour
+# range if you want it pinned to local time, or widen it for 24/7 coverage.
+# :15 past the hour keeps it off the congested top-of-hour scheduler window.
+#
+# Cadence cost guide (each run ~5 min of Neon compute):
+#   '15 11-23/2 * * *'  -> 7 runs/day  (~35 min/day,  ~18 h/month)   <- this file
+#   '15 */2 * * *'      -> 12 runs/day (~60 min/day,  ~30 h/month)   24/7 every 2h
+#   '15 11-23/3 * * *'  -> ~4 runs/day (~20 min/day,  ~10 h/month)   business hrs, every 3h
+on:
+  schedule:
+    - cron: '15 11-23/2 * * *'
+  workflow_dispatch: # adds a "Run workflow" button in the Actions tab
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Hit /api/cron/sync
+        run: |
+          response=$(curl -sSL --max-time 80 -w "\nHTTP_STATUS:%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.APP_URL }}/api/cron/sync")
+          echo "$response"
+          status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTP_STATUS://')
+          if [ "$status" -ne 200 ]; then
+            echo "Sync returned HTTP $status — failing the job so GitHub notifies."
+            exit 1
+          fi
