@@ -23,7 +23,6 @@ export type OrderRow = {
   customer_name: string | null
   total_price: string
   shopify_created_at: string // ISO string after JSON serialization
-  sellercloud_order_id: string | null
   fulfillment_status?: string | null
 }
 
@@ -33,7 +32,6 @@ type Props = {
   initialNotes: Record<string, string | null>
   initialInProgress: Record<string, boolean>
   storeDomain: string | null
-  scAdminUrl: string | null
 }
 
 const NOTE_DISPLAY_MAX = 70
@@ -44,7 +42,6 @@ export function OrdersTable({
   initialNotes,
   initialInProgress,
   storeDomain,
-  scAdminUrl,
 }: Props) {
   const router = useRouter()
   const [rows, setRows] = useState(initialRows)
@@ -149,7 +146,7 @@ export function OrdersTable({
   }
 
   // Number of cells in a row, used for the colSpan on the expansion row.
-  const colCount = variant === 'late' ? 7 : 6
+  const colCount = variant === 'late' ? 6 : 5
 
   if (rows.length === 0) {
     return (
@@ -166,7 +163,6 @@ export function OrdersTable({
       <thead>
         <tr>
           <th style={{ width: variant === 'late' ? '10%' : '11%' }}>Order</th>
-          <th style={{ width: '10%' }}>SC</th>
           <th style={{ width: variant === 'late' ? '20%' : '24%' }}>Customer</th>
           {variant === 'late' && <th style={{ width: '8%' }}>Late</th>}
           <th style={{ width: '11%' }}>Value</th>
@@ -200,20 +196,6 @@ export function OrdersTable({
                     </a>
                   ) : (
                     <>#{r.order_number}</>
-                  )}
-                </td>
-                <td>
-                  {r.sellercloud_order_id && scAdminUrl ? (
-                    <a
-                      href={`${scAdminUrl}/orders/order-details.aspx?id=${r.sellercloud_order_id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="dfu-inv-link"
-                    >
-                      SC-{r.sellercloud_order_id}
-                    </a>
-                  ) : (
-                    <span style={{ color: 'var(--text3)' }}>—</span>
                   )}
                 </td>
                 <td>
