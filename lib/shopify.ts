@@ -166,3 +166,37 @@ export type ShopifyOrder = {
   created_at: string
   customer: { first_name: string | null; last_name: string | null } | null
 }
+
+/**
+ * Fetch all orders created in the last `daysBack` days (any status), paginated.
+ * Used by the consolidated sync cron to mirror new and VIP orders. Unlike
+ * fetchStaleUnfulfilledOrders (no lower age bound, filters to open+unfulfilled),
+ * this returns everything recent so VIP/new orders land in the mirror regardless
+ * of fulfillment state.
+ *
+ * Quirk: once page_info is included you can't also send created_at_min/status —
+ * those are baked into the cursor — so only `limit` carries on later pages.
+ */
+export async function fetchRecentOrders(daysBack: number): Promise<ShopifyOrder[]> {
+  const cutoff = new Date(Date.now() - daysBack * 86_400_000).toISOString()
+  const initialQuery = new URLSearchParams({
+    status: 'any',
+    created_at_min: cutoff,
+    limit: '250',
+  })
+
+  const orders: ShopifyOrder[] = []
+  let nextPath: string | null = `/orders.json?${initialQuery.toString()}`
+  let pageCount = 0
+  const MAX_PAGES = 10 // 10 × 250 = 2,500 orders / run
+
+  while (nextPath && pageCount < MAX_PAGES) {
+    const { body, linkHeader } = await shopifyRequestRaw<{ orders: ShopifyOrder[] }>(nextPath)
+    orders.push(...body.orders)
+    pageCount += 1
+    const cursor = parseNextPageInfo(linkHeader)
+    nextPath = cursor ? `/orders.json?limit=250&page_info=${encodeURIComponent(cursor)}` : null
+  }
+
+  return orders
+}
