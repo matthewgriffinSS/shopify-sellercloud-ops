@@ -13,7 +13,7 @@ type CheckResult = {
 }
 
 /**
- * GET /api/health — pings DB, Shopify, Sellercloud in parallel.
+ * GET /api/health — pings DB and Shopify in parallel.
  * Returns 200 if all pass, 503 if any fail. Safe to hit frequently.
  *
  * Protected by CRON_SECRET when called programmatically. When called from
@@ -24,9 +24,6 @@ export async function GET(req: NextRequest) {
   const auth = req.headers.get('authorization')
   const isCron = auth === `Bearer ${process.env.CRON_SECRET}`
 
-  // If not cron, we still want to gate this behind dashboard auth so random
-  // internet traffic doesn't probe our service list. The /health page forwards
-  // the user's dashboard_auth cookie, which is checked here.
   if (!isCron) {
     const { verifyCookieValue } = await import('@/lib/auth')
     const cookieValue = req.cookies.get('dashboard_auth')?.value
@@ -35,13 +32,9 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const [db, shopify, sellercloud] = await Promise.all([
-    checkDb(),
-    checkShopify(),
-    checkSellercloud(),
-  ])
+  const [db, shopify] = await Promise.all([checkDb(), checkShopify()])
 
-  const all = [db, shopify, sellercloud]
+  const all = [db, shopify]
   const allOk = all.every((c) => c.ok)
 
   return Response.json(
@@ -99,7 +92,6 @@ async function checkShopify(): Promise<CheckResult> {
   try {
     const { result, latencyMs } = await timed(async () => {
       // shop.json is the cheapest possible authenticated Shopify call.
-      // If this works, client_credentials auth + scopes are wired correctly.
       return shopifyRequest<{ shop: { name: string; domain: string } }>('/shop.json')
     })
     return {
@@ -111,49 +103,6 @@ async function checkShopify(): Promise<CheckResult> {
   } catch (err) {
     return {
       name: 'shopify',
-      ok: false,
-      latencyMs: null,
-      detail: err instanceof Error ? err.message : String(err),
-    }
-  }
-}
-
-async function checkSellercloud(): Promise<CheckResult> {
-  try {
-    const baseUrl = process.env.SELLERCLOUD_API_URL
-    const username = process.env.SELLERCLOUD_USERNAME
-    const password = process.env.SELLERCLOUD_PASSWORD
-    if (!baseUrl || !username || !password) {
-      return {
-        name: 'sellercloud',
-        ok: false,
-        latencyMs: null,
-        detail: 'SELLERCLOUD_API_URL / USERNAME / PASSWORD env vars are not all set',
-      }
-    }
-
-    const { latencyMs } = await timed(async () => {
-      const res = await fetch(`${baseUrl}/api/token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ Username: username, Password: password }),
-      })
-      if (!res.ok) {
-        throw new Error(`Auth failed: ${res.status} ${(await res.text()).slice(0, 200)}`)
-      }
-      const data = (await res.json()) as { access_token?: string }
-      if (!data.access_token) throw new Error('No access_token in response')
-      return data
-    })
-    return {
-      name: 'sellercloud',
-      ok: true,
-      latencyMs,
-      detail: 'Auth succeeded, token received',
-    }
-  } catch (err) {
-    return {
-      name: 'sellercloud',
       ok: false,
       latencyMs: null,
       detail: err instanceof Error ? err.message : String(err),
