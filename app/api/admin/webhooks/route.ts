@@ -15,11 +15,8 @@ type Webhook = {
 }
 
 const REQUIRED_WEBHOOKS = [
-  { topic: 'orders/create', path: '/api/webhooks/shopify/orders-create' },
-  { topic: 'orders/updated', path: '/api/webhooks/shopify/orders-updated' },
   { topic: 'draft_orders/create', path: '/api/webhooks/shopify/draft-orders-create' },
   { topic: 'draft_orders/update', path: '/api/webhooks/shopify/draft-orders-create' },
-  { topic: 'checkouts/update', path: '/api/webhooks/shopify/checkouts-abandoned' },
 ]
 
 function requireAuth(req: NextRequest) {
@@ -127,6 +124,44 @@ export async function POST(req: NextRequest) {
     }
 
     return Response.json({ ok: true, results })
+  } catch (err) {
+    return Response.json(
+      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      { status: 500 },
+    )
+  }
+}
+
+/**
+ * DELETE /api/admin/webhooks
+ * Prunes Shopify webhooks: deletes any registered webhook whose topic is NOT in
+ * REQUIRED_WEBHOOKS. Use this to remove the orders/checkout webhooks now that
+ * /api/cron/sync handles that data. Idempotent — safe to re-run.
+ */
+export async function DELETE(req: NextRequest) {
+  const auth = req.headers.get('authorization')
+  const isCron = auth === `Bearer ${process.env.CRON_SECRET}`
+  if (!isCron) {
+    const unauth = requireAuth(req)
+    if (unauth) return unauth
+  }
+
+  try {
+    const { webhooks } = await shopifyRequest<{ webhooks: Webhook[] }>('/webhooks.json?limit=250')
+    const keep = new Set(REQUIRED_WEBHOOKS.map((w) => w.topic))
+
+    const deleted: Array<{ id: number; topic: string }> = []
+    for (const w of webhooks.filter((w) => !keep.has(w.topic))) {
+      await shopifyRequest(`/webhooks/${w.id}.json`, { method: 'DELETE' })
+      deleted.push({ id: w.id, topic: w.topic })
+    }
+
+    return Response.json({
+      ok: true,
+      deletedCount: deleted.length,
+      deleted,
+      kept: webhooks.filter((w) => keep.has(w.topic)).map((w) => ({ id: w.id, topic: w.topic })),
+    })
   } catch (err) {
     return Response.json(
       { ok: false, error: err instanceof Error ? err.message : String(err) },
