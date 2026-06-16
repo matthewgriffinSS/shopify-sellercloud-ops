@@ -37,6 +37,14 @@ export async function Metrics() {
         <div className="value">{formatMoney(m.vipRevenueMtd)}</div>
         <div className="detail">{m.vipOrderCountMtd} orders</div>
       </div>
+      {/* The scoreboard: carts that converted AFTER a rep logged a recovery
+          email. Green accent because this is the win column — the dollars
+          this dashboard pulled back. */}
+      <div className="kpi kpi-win">
+        <div className="label">Recovered MTD</div>
+        <div className="value">{formatMoney(m.recoveredRevenueMtd)}</div>
+        <div className="detail">{m.recoveredCartCountMtd} carts after outreach</div>
+      </div>
     </div>
   )
 }
