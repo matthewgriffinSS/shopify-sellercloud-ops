@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
+import { getCurrentRep } from './rep'
 
 type ActionType =
   | 'mark_fulfilled'
@@ -61,6 +62,7 @@ const contextText = 'Records the action in this dashboard.'
           resourceId,
           actionType,
           note: note || undefined,
+          actor: getCurrentRep() ?? undefined,
           tracking: needsTracking
             ? { carrier: trackingCarrier, number: trackingNumber }
             : undefined,
