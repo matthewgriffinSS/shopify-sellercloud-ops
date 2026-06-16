@@ -1523,3 +1523,91 @@ tr.row-form > td {
     transform: translateY(0) scale(1);
   }
 }
+/* ════════════════════════════════════════════════════════════════════
+   Email-pass additions — recovery-email composer inside cart cards.
+   Everything here is additive. Append to the bottom of app/globals.css.
+   ════════════════════════════════════════════════════════════════════ */
+
+/* Cards now have three buttons; let them wrap instead of overflowing
+   on narrow cards. */
+.cart-a {
+  flex-wrap: wrap;
+}
+
+/* The composer reuses .cart-form for the card-expansion shell; these
+   rules only style what's new inside it. */
+
+.cart-email-form .email-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.email-field-name {
+  flex: 0 0 52px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.65;
+}
+
+.email-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  background: rgba(128, 128, 128, 0.08);
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.email-input:focus {
+  outline: none;
+  border-color: rgba(128, 128, 128, 0.7);
+}
+
+.email-input[readonly] {
+  opacity: 0.8;
+}
+
+.email-body-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+textarea.email-body {
+  width: 100%;
+  resize: vertical;
+  line-height: 1.45;
+  margin-bottom: 8px;
+}
+
+.email-warn {
+  font-size: 12px;
+  opacity: 0.7;
+  margin: 2px 0 8px;
+}
+
+.email-form-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.email-open-links {
+  font-size: 12px;
+  opacity: 0.75;
+  margin-right: auto; /* pushes the buttons to the right edge */
+}
+
+.email-open-links a {
+  color: inherit;
+  text-decoration: underline;
+}
