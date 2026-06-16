@@ -3,7 +3,8 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { daysAgo, formatMoney } from './shared'
-import { confirmDialog } from './ConfirmDialog'
+import { confirmDialog } from './ConfirmDialog' 
+import { getCurrentRep } from './rep'
 
 /**
  * Single shared client-side table used by LateFulfillments and VipOrders.
@@ -89,6 +90,7 @@ export function OrdersTable({
           resourceType: 'order',
           resourceId: row.id,
           actionType: 'mark_processed',
+          actor: getCurrentRep() ?? undefined,
         }),
       })
       const data = await res.json()
@@ -128,6 +130,7 @@ export function OrdersTable({
           resourceId: row.id,
           actionType: 'add_note',
           note: trimmed,
+          actor: getCurrentRep() ?? undefined,
         }),
       })
       const data = await res.json()
