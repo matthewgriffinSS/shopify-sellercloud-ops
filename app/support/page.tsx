@@ -4,6 +4,7 @@ import { requireDashboardAuth } from '@/lib/auth'
 import { Metrics } from '@/app/components/Metrics'
 import { LateFulfillments } from '@/app/components/LateFulfillments'
 import { VipOrders } from '@/app/components/VipOrders'
+import { HeaderTools } from '@/app/components/HeaderTools'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -38,6 +39,7 @@ export default async function SupportDashboardPage() {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <HeaderTools />
           <Link href="/sales" className="icon-btn">
             Sales →
           </Link>
