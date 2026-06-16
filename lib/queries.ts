@@ -375,6 +375,25 @@ export async function fetchMetrics() {
       AND pa.created_at > NOW() - INTERVAL '7 days'
   `
 
+  // The scoreboard: carts that converted AFTER a rep logged a recovery email
+  // on the dashboard this month. The sync's token-match sets recovered_at
+  // even on carts that were already marked handled, so this accrues on its
+  // own — the pa.created_at < c.recovered_at check is what makes it
+  // "outreach, then conversion" rather than coincidence.
+  const [recovered] = await sql<{ revenue: string; count: string }[]>`
+    SELECT COALESCE(SUM(c.total_price), 0)::text AS revenue, COUNT(*)::text AS count
+    FROM abandoned_checkouts c
+    WHERE c.recovered_at IS NOT NULL
+      AND c.recovered_at >= date_trunc('month', NOW())
+      AND EXISTS (
+        SELECT 1 FROM processing_actions pa
+        WHERE pa.resource_type = 'abandoned_checkout'
+          AND pa.resource_id = c.id::text
+          AND pa.action_type = 'recovery_email_sent'
+          AND pa.created_at < c.recovered_at
+      )
+  `
+
   return {
     revenueAtRisk: parseFloat(late.revenue) + parseFloat(abandoned.revenue),
     awaitingAction: parseInt(late.count) + parseInt(abandoned.count),
@@ -382,5 +401,7 @@ export async function fetchMetrics() {
     avgResolveHours: avgResolve.avg_hours ? parseFloat(avgResolve.avg_hours) : null,
     vipRevenueMtd: parseFloat(vipMtd.revenue),
     vipOrderCountMtd: parseInt(vipMtd.count),
+    recoveredRevenueMtd: parseFloat(recovered.revenue),
+    recoveredCartCountMtd: parseInt(recovered.count),
   }
 }
