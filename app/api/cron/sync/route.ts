@@ -42,6 +42,12 @@ type Checkout = {
  *   3. Polls abandoned checkouts from the last 7 days, upserts every $2000+
  *      one, then marks any cart recovered whose token now matches a mirrored
  *      order (the recovery the orders/create webhook used to do).
+ *   4. Housekeeping, free because we're already awake: trims webhook_log and
+ *      sync_runs to 30 days, and nulls raw_payload on rows older than 60 days
+ *      that nothing reads anymore — this is what keeps the Neon free-tier
+ *      0.5 GB storage limit comfortable.
+ *   5. Logs the run to sync_runs (success or failure), which powers the
+ *      "Synced 23m ago" indicator in the dashboard header.
  *
  * Draft orders are intentionally NOT handled here — they stay on their
  * draft_orders/create + draft_orders/update webhooks, which are low-volume
@@ -50,7 +56,8 @@ type Checkout = {
  *
  * Auth: Authorization: Bearer $CRON_SECRET (GitHub Actions) OR a logged-in
  * dashboard cookie. Because it's a GET, you can also trigger it manually just
- * by visiting /api/cron/sync in the browser while signed in.
+ * by visiting /api/cron/sync in the browser while signed in — or with the
+ * "Sync now" button in the dashboard header.
  */
 export async function GET(req: NextRequest) {
   const auth = req.headers.get('authorization')
@@ -65,6 +72,7 @@ export async function GET(req: NextRequest) {
   }
 
   const started = Date.now()
+  const triggeredBy = isCron ? 'cron' : 'user'
 
   try {
     // ---- 1 + 2: Orders ----
@@ -179,21 +187,93 @@ export async function GET(req: NextRequest) {
       RETURNING id::text
     `
 
+    // ---- 4: Housekeeping (same compute wake, effectively free) ----
+
+    // Webhook audit rows older than 30 days. Only the draft webhooks write
+    // here now, but the table never stops growing without this.
+    const [weblogPurge] = await sql<{ count: string }[]>`
+      WITH purged AS (
+        DELETE FROM webhook_log
+        WHERE received_at < NOW() - INTERVAL '30 days'
+        RETURNING 1
+      )
+      SELECT COUNT(*)::text AS count FROM purged
+    `
+
+    // Our own run log gets the same 30-day retention.
+    await sql`
+      DELETE FROM sync_runs
+      WHERE ran_at < NOW() - INTERVAL '30 days'
+    `
+
+    // Null out full Shopify JSON payloads nothing reads anymore. After the
+    // one-time backfill in migration 003, each run only touches the handful
+    // of rows that crossed the 60-day line since the last run. (Old stale
+    // unfulfilled orders keep theirs — the order upsert above re-fills them
+    // each run anyway, and they're the late-fulfillment working set.)
+    const [payloadsNulled] = await sql<{ count: string }[]>`
+      WITH nulled AS (
+        UPDATE shopify_orders
+        SET raw_payload = NULL
+        WHERE raw_payload IS NOT NULL
+          AND fulfillment_status = 'fulfilled'
+          AND shopify_created_at < NOW() - INTERVAL '60 days'
+        RETURNING 1
+      )
+      SELECT COUNT(*)::text AS count FROM nulled
+    `
+    await sql`
+      UPDATE abandoned_checkouts
+      SET raw_payload = NULL
+      WHERE raw_payload IS NOT NULL
+        AND abandoned_at < NOW() - INTERVAL '60 days'
+    `
+    await sql`
+      UPDATE shopify_draft_orders
+      SET raw_payload = NULL
+      WHERE raw_payload IS NOT NULL
+        AND shopify_created_at < NOW() - INTERVAL '60 days'
+    `
+
+    // ---- 5: Log the run ----
+    const elapsedMs = Date.now() - started
+    await sql`
+      INSERT INTO sync_runs (
+        ok, triggered_by, elapsed_ms, orders_upserted, carts_upserted, auto_recovered
+      ) VALUES (
+        TRUE, ${triggeredBy}, ${elapsedMs}, ${ordersUpserted}, ${cartsUpserted},
+        ${recoverResult.length}
+      )
+    `
+
     return Response.json({
       ok: true,
-      triggeredBy: isCron ? 'cron' : 'user',
-      elapsedMs: Date.now() - started,
+      triggeredBy,
+      elapsedMs,
       ordersFetched: orders.length,
       ordersUpserted,
       cartsFetched: checkouts.length,
       cartsUpserted,
       skippedLowValue,
       autoRecovered: recoverResult.length,
+      weblogRowsPurged: parseInt(weblogPurge.count),
+      payloadsNulled: parseInt(payloadsNulled.count),
     })
   } catch (err) {
-    return Response.json(
-      { ok: false, error: err instanceof Error ? err.message : String(err) },
-      { status: 500 },
-    )
+    const message = err instanceof Error ? err.message : String(err)
+
+    // Best-effort failure logging so the header indicator can say
+    // "Sync failed 2h ago" instead of silently going stale. Wrapped in its
+    // own try so a database outage doesn't mask the original error.
+    try {
+      await sql`
+        INSERT INTO sync_runs (ok, triggered_by, elapsed_ms, error)
+        VALUES (FALSE, ${triggeredBy}, ${Date.now() - started}, ${message})
+      `
+    } catch {
+      // Nothing else to do — the GitHub Actions job will still fail and email.
+    }
+
+    return Response.json({ ok: false, error: message }, { status: 500 })
   }
 }
