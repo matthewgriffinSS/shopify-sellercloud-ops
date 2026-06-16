@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { requireDashboardAuth } from '@/lib/auth'
+import { HeaderTools } from '@/app/components/HeaderTools'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -29,6 +30,7 @@ export default async function HomePage() {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <HeaderTools /> 
           <a href="/health" className="icon-btn">
             Health
           </a>
