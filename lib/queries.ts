@@ -272,10 +272,18 @@ export async function fetchDraftsForRep(rep: string): Promise<DraftFollowupRow[]
 }
 
 /**
- * Abandoned carts still in play. Excludes carts that:
- *   - have converted to an order (recovered_at set by orders-create webhook)
+ * Abandoned carts still in play.
+ *
+ * Excludes carts that:
+ *   - have converted to an order (recovered_at set by the sync's token match)
  *   - have been manually handled on the dashboard (processing_actions row
  *     with a terminal action: recovery_email_sent, contacted, or mark_processed)
+ *
+ * Also pulls two things out of raw_payload for the in-card email composer:
+ *   - recovery_url: Shopify's abandoned_checkout_url (resume-checkout link)
+ *   - line_items: just title + quantity per item, for the email template.
+ *     The jsonb_typeof guard makes this safe on any old rows where the
+ *     payload is missing line_items entirely.
  */
 export async function fetchAbandonedCarts() {
   return sql<
@@ -288,10 +296,21 @@ export async function fetchAbandonedCarts() {
       abandoned_at: Date
       assigned_rep: string | null
       contacted_at: Date | null
+      recovery_url: string | null
+      line_items: { title: string | null; quantity: number }[]
     }[]
   >`
     SELECT c.id::text, c.customer_email, c.customer_name, c.total_price::text,
-           c.line_item_count, c.abandoned_at, c.assigned_rep, c.contacted_at
+           c.line_item_count, c.abandoned_at, c.assigned_rep, c.contacted_at,
+           c.raw_payload->>'abandoned_checkout_url' AS recovery_url,
+           CASE
+             WHEN jsonb_typeof(c.raw_payload->'line_items') = 'array' THEN
+               (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+                         'title', li->>'title',
+                         'quantity', COALESCE((li->>'quantity')::int, 1))), '[]'::jsonb)
+                FROM jsonb_array_elements(c.raw_payload->'line_items') AS li)
+             ELSE '[]'::jsonb
+           END AS line_items
     FROM abandoned_checkouts c
     WHERE c.abandoned_at > NOW() - INTERVAL '7 days'
       AND c.recovered_at IS NULL
