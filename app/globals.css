@@ -1611,3 +1611,94 @@ textarea.email-body {
   color: inherit;
   text-decoration: underline;
 }
+/* ════════════════════════════════════════════════════════════════════
+   Ops-pass additions. Everything here is additive — append to the
+   bottom of app/globals.css (after the email-pass block if present).
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ---- KPI row: now six tiles. Appended after the original rule, so this
+   wins the cascade on desktop; the existing 900px (3-col) and 600px
+   (2-col) media queries still apply and wrap six tiles evenly. ---- */
+
+.kpi-row {
+  grid-template-columns: repeat(6, 1fr);
+}
+
+/* Slightly smaller value text so dollar figures fit six-up at 1400px. */
+.kpi .value {
+  font-size: 28px;
+}
+
+/* The win tile — green because it's the money the dashboard pulled back. */
+.kpi.kpi-win {
+  border-top-color: var(--green);
+}
+
+.kpi.kpi-win .label {
+  color: var(--green);
+}
+
+.kpi.kpi-win:hover {
+  box-shadow: 0 4px 20px rgba(52, 199, 89, 0.14);
+}
+
+/* ---- Header tools: sync pill + Sync now + rep picker ---- */
+
+.header-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.sync-pill {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  color: var(--text2);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* The base .dot is already green with a glow; these recolor it for the
+   stale / failed states. */
+.dot.dot-warn {
+  background: var(--accent);
+  box-shadow: 0 0 6px rgba(232, 93, 36, 0.5);
+}
+
+.dot.dot-bad {
+  background: var(--danger-text, #ff453a);
+  box-shadow: 0 0 6px rgba(255, 69, 58, 0.5);
+}
+
+/* Rep picker, styled to sit beside .icon-btn without copying its hover. */
+.rep-select {
+  height: 34px;
+  padding: 0 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text2);
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-weight: 600;
+  font-family: var(--font-body);
+  cursor: pointer;
+}
+
+.rep-select:hover,
+.rep-select:focus {
+  border-color: var(--accent);
+  color: var(--accent);
+  outline: none;
+}
+
+.rep-select option {
+  background: var(--bg2);
+  color: var(--text2);
+  text-transform: none;
+}
