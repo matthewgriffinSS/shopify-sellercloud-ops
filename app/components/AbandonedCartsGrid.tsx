@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { formatMoney, timeAgo } from './shared'
 import { confirmDialog } from './ConfirmDialog'
+import { getCurrentRep } from './rep'
 
 /**
  * Client-side grid for abandoned carts. Same pattern as OrdersTable:
@@ -20,6 +21,9 @@ import { confirmDialog } from './ConfirmDialog'
  * recovery_email_sent processing_action, which is terminal:
  *   (a) the cart is excluded from the query on next load, and
  *   (b) the "Processed today" KPI goes up by 1.
+ *
+ * Every action POST sends the current rep (from the header's "I am" picker)
+ * as `actor`, and the email composer signs with that name.
  */
 
 export type CartLineItem = {
@@ -76,7 +80,10 @@ function summarizeItems(items: CartLineItem[], fallbackCount: number): string {
   return `the ${titles[0]} and ${rest} other item${rest === 1 ? '' : 's'}`
 }
 
-function buildEmailDraft(cart: CartRow): { subject: string; body: string } {
+function buildEmailDraft(
+  cart: CartRow,
+  repName: string | null,
+): { subject: string; body: string } {
   const first = firstNameOf(cart.customer_name)
   const items = summarizeItems(cart.line_items ?? [], cart.line_item_count)
 
@@ -94,7 +101,7 @@ function buildEmailDraft(cart: CartRow): { subject: string; body: string } {
     linkBlock +
     `If it's easier to talk it through, just reply to this email — happy to help.\n\n` +
     `Thanks,\n` +
-    `${cart.assigned_rep ?? '[Your name]'}\n` +
+    `${repName ?? cart.assigned_rep ?? '[Your name]'}\n` +
     `Shock Surplus`
 
   return { subject, body }
@@ -206,6 +213,7 @@ export function AbandonedCartsGrid({
           resourceType: 'abandoned_checkout',
           resourceId: cart.id,
           actionType: 'recovery_email_sent',
+          actor: getCurrentRep() ?? undefined,
         }),
       })
       const data = await res.json()
@@ -255,6 +263,7 @@ export function AbandonedCartsGrid({
           resourceId: cart.id,
           actionType: 'add_note',
           note: trimmed,
+          actor: getCurrentRep() ?? undefined,
         }),
       })
       const data = await res.json()
@@ -397,6 +406,9 @@ export function AbandonedCartsGrid({
  * Copy button; "Open draft in" links prefill a draft in the rep's mail
  * app or Gmail as a shortcut. "✓ Mark emailed" logs the same terminal
  * action as Mark handled and clears the card.
+ *
+ * The signature uses the header's "I am" rep when one is picked, then the
+ * cart's assigned rep, then a "[Your name]" cue to fill in.
  */
 function CartEmailForm({
   cart,
@@ -412,7 +424,7 @@ function CartEmailForm({
   disabled: boolean
 }) {
   // Computed once on open; the rep edits from there.
-  const [draft] = useState(() => buildEmailDraft(cart))
+  const [draft] = useState(() => buildEmailDraft(cart, getCurrentRep()))
   const [subject, setSubject] = useState(draft.subject)
   const [body, setBody] = useState(draft.body)
 
