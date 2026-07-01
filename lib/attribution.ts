@@ -172,12 +172,14 @@ async function fetchOrdersInRange(sinceISO: string, untilISO: string): Promise<A
 // ---------- RingCentral call log -> phone contact set ----------
 async function fetchCallPhones(sinceISO: string, untilISO: string): Promise<Set<string>> {
   const started = Date.now()
-  const server = process.env.RINGCENTRAL_SERVER || 'https://platform.ringcentral.com'
-  const clientId = process.env.RINGCENTRAL_CLIENT_ID
-  const clientSecret = process.env.RINGCENTRAL_CLIENT_SECRET || ''
-  const jwt = process.env.RINGCENTRAL_JWT
-  const ext = process.env.RINGCENTRAL_EXTENSION || '~'
-  if (!clientId || !jwt) throw new Error('not configured')
+  const server = (process.env.RINGCENTRAL_SERVER || 'https://platform.ringcentral.com').trim()
+  const clientId = (process.env.RINGCENTRAL_CLIENT_ID || '').trim()
+  const clientSecret = (process.env.RINGCENTRAL_CLIENT_SECRET || '').trim()
+  const jwt = (process.env.RINGCENTRAL_JWT || '').trim()
+  const ext = (process.env.RINGCENTRAL_EXTENSION || '~').trim()
+  if (!clientId || !clientSecret || !jwt) {
+    throw new Error('missing CLIENT_ID, CLIENT_SECRET, or JWT')
+  }
 
   const dl = deadline(RC_BUDGET_MS)
   try {
