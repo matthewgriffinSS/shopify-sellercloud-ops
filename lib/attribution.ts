@@ -236,30 +236,30 @@ export async function buildReport(month: string): Promise<AttrReport> {
   const warnings: string[] = []
   const rcConfigured = !!(process.env.RINGCENTRAL_CLIENT_ID && process.env.RINGCENTRAL_JWT)
 
-  // Kick both off together so wall time is ~max(shopify, ringcentral).
+  // Kick both off together (wall time ~max of the two). RingCentral is wrapped
+  // so it can NEVER reject — a bad config or a stall becomes a warning and phone
+  // matching is skipped; it cannot crash the page.
   const ordersPromise = fetchOrdersInRange(sinceISO, untilISO)
-  const rcPromise: Promise<Set<string>> = rcConfigured
+  const rcPromise: Promise<{ phones: Set<string>; warning?: string }> = rcConfigured
     ? fetchCallPhones(sinceISO, untilISO)
-    : Promise.resolve(new Set<string>())
+        .then((phones) => ({ phones }))
+        .catch((e: any) => ({ phones: new Set<string>(), warning: 'RingCentral: ' + (e?.message || e) }))
+    : Promise.resolve({
+        phones: new Set<string>(),
+        warning: 'RingCentral not configured — phone matches off (Zendesk CSV email matches still work)',
+      })
 
   let orders: AttrOrder[]
   try {
     orders = await ordersPromise
-  } catch (e: any) {
-    rcPromise.catch(() => {}) // avoid an unhandled rejection if Shopify fails first
+  } catch (e) {
+    await rcPromise // already handled above; just let it settle
     throw e
   }
 
-  let phoneSet = new Set<string>()
-  if (rcConfigured) {
-    try {
-      phoneSet = await rcPromise
-    } catch (e: any) {
-      warnings.push('RingCentral: ' + (e?.message || e))
-    }
-  } else {
-    warnings.push('RingCentral not configured — phone matches off (Zendesk CSV email matches still work)')
-  }
+  const rc = await rcPromise
+  const phoneSet = rc.phones
+  if (rc.warning) warnings.push(rc.warning)
 
   for (const o of orders) {
     o.matchedPhone = o.phones.find((p) => phoneSet.has(p)) || null
